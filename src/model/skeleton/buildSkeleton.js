@@ -9,6 +9,7 @@
 
 import SkeletonNode from './SkeletonNode.js';
 import SkeletonPath from './SkeletonPath.js';
+import { attachSpines } from './buildSpines.js';
 import {
     add, sub, scale, cross, len, normalize, rotateAxis, perp, lerp, deg,
 } from '../vec3.js';
@@ -145,5 +146,6 @@ export function buildSkeleton(P, rng) {
         return node;
     }
 
+    attachSpines(paths, nodes);
     return { nodes, paths, bounds };
 }

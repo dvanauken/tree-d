@@ -7,7 +7,7 @@
 // cards.
 
 import * as THREE from '../../vendor/three.module.js';
-import { add, sub, scale, dot, cross, len, normalize, rotateAxis, perp } from '../model/vec3.js';
+import { sub, scale, dot, cross, len, normalize, rotateAxis, perp } from '../model/vec3.js';
 
 const RADIAL = 12; // sides per tube ring (smooth limbs)
 
@@ -51,31 +51,19 @@ const GA = 6; // angular noise cells (wraps)
 const LUMP = 0.11; // cross-section irregularity
 const BULGE = 0.08; // length-wise thickness variation
 const COLLAR = 0.20; // junction swelling at each limb base
-const CURVE_TENSION = 0.75; // lower than Catmull-Rom to avoid fork overshoot
-const SMOOTH_STEPS = {
-    trunk: 4,
-    primary: 4,
-    secondary: 3,
-    tertiary: 3,
-    twig: 2,
-};
 
 function addTube(P, C, I, path, nodes, col) {
-    const ids = path.nodeIds;
-    if (ids.length < 2) return;
-    const rawPts = ids.map((id) => nodes[id].position);
-    const rawRadii = ids.map((id) => nodes[id].radius);
-    const smoothed = smoothPath(rawPts, rawRadii, path.order);
-    const pts = smoothed.pts;
-    const radii = smoothed.radii;
+    const spine = path.spine || fallbackSpine(path, nodes);
+    const pts = spine.positions;
+    const radii = spine.radii;
     const n = pts.length;
+    if (n < 2) return;
     const { normals, binormals } = frames(pts);
     const seed = path.id + 1;
     const startVert = P.length / 3;
 
-    const cum = [0];
-    for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + dist(pts[i], pts[i - 1]);
-    const total = cum[n - 1] || 1;
+    const cum = spine.distances || cumulativeDistances(pts);
+    const total = spine.length || cum[n - 1] || 1;
     const GL = Math.max(2, Math.round(total / 2.5)); // length noise cells
 
     for (let i = 0; i < n; i++) {
@@ -116,55 +104,6 @@ function addTube(P, C, I, path, nodes, col) {
     }
 }
 
-function smoothPath(rawPts, rawRadii, order) {
-    if (rawPts.length < 3) return { pts: rawPts, radii: rawRadii };
-
-    const steps = SMOOTH_STEPS[order] ?? 3;
-    const pts = [];
-    const radii = [];
-
-    for (let i = 0; i < rawPts.length - 1; i++) {
-        const p0 = rawPts[i];
-        const p1 = rawPts[i + 1];
-        const m0 = tangent(rawPts, i);
-        const m1 = tangent(rawPts, i + 1);
-        const start = i === 0 ? 0 : 1;
-
-        for (let s = start; s <= steps; s++) {
-            const t = s / steps;
-            pts.push(hermite(p0, p1, m0, m1, t));
-            radii.push(smoothRadius(rawRadii[i], rawRadii[i + 1], t));
-        }
-    }
-
-    return { pts, radii };
-}
-
-function tangent(pts, i) {
-    if (i === 0) return scale(sub(pts[1], pts[0]), CURVE_TENSION);
-    if (i === pts.length - 1) return scale(sub(pts[i], pts[i - 1]), CURVE_TENSION);
-    return scale(sub(pts[i + 1], pts[i - 1]), 0.5 * CURVE_TENSION);
-}
-
-function hermite(p0, p1, m0, m1, t) {
-    const t2 = t * t;
-    const t3 = t2 * t;
-    const h00 = 2 * t3 - 3 * t2 + 1;
-    const h10 = t3 - 2 * t2 + t;
-    const h01 = -2 * t3 + 3 * t2;
-    const h11 = t3 - t2;
-
-    return add(
-        add(scale(p0, h00), scale(m0, h10)),
-        add(scale(p1, h01), scale(m1, h11)),
-    );
-}
-
-function smoothRadius(a, b, t) {
-    const s = t * t * (3 - 2 * t);
-    return a + (b - a) * s;
-}
-
 // Deterministic hash -> [0,1).
 function h2(seed, x, y) {
     let n = (seed * 73856093) ^ ((x + 1024) * 19349663) ^ ((y + 1024) * 83492791);
@@ -199,8 +138,21 @@ function noise1(seed, x) {
     return a + (b - a) * s;
 }
 
-function dist(a, b) {
-    return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+function fallbackSpine(path, nodes) {
+    const positions = path.nodeIds.map((id) => nodes[id].position);
+    return {
+        positions,
+        radii: path.nodeIds.map((id) => nodes[id].radius),
+        distances: cumulativeDistances(positions),
+    };
+}
+
+function cumulativeDistances(pts) {
+    const distances = [0];
+    for (let i = 1; i < pts.length; i++) {
+        distances[i] = distances[i - 1] + len(sub(pts[i], pts[i - 1]));
+    }
+    return distances;
 }
 
 // Rotation-minimizing frame along a polyline (parallel transport).
