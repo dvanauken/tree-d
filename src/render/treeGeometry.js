@@ -33,11 +33,6 @@ export function buildWoodGeometry(skeleton) {
         col.set(ORDER_COLOR[path.order] ?? 0x705a42);
         addTube(P, C, I, path, nodes, col);
     }
-    for (const node of nodes) {
-        if (!isForkNode(node)) continue;
-        col.set(ORDER_COLOR[node.order] ?? 0x705a42);
-        addForkHub(P, C, I, node, nodes, col);
-    }
 
     const g = new THREE.BufferGeometry();
     g.setIndex(I);
@@ -55,11 +50,7 @@ export function buildWoodGeometry(skeleton) {
 const GA = 6; // angular noise cells (wraps)
 const LUMP = 0.11; // cross-section irregularity
 const BULGE = 0.08; // length-wise thickness variation
-const COLLAR = 0.22; // directional swelling where a limb leaves its parent
-const FORK_FLARE = 0.14; // terminal swelling on parent paths that split
-const HUB_MIN_RADIUS = 0.16; // skip tiny twig forks; collars are enough there
-const HUB_RINGS = 6;
-const HUB_SEGMENTS = 12;
+const COLLAR = 0.20; // junction swelling at each limb base
 const CURVE_TENSION = 0.75; // lower than Catmull-Rom to avoid fork overshoot
 const SMOOTH_STEPS = {
     trunk: 4,
@@ -81,7 +72,6 @@ function addTube(P, C, I, path, nodes, col) {
     const { normals, binormals } = frames(pts);
     const seed = path.id + 1;
     const startVert = P.length / 3;
-    const junction = junctionInfo(path, ids, rawPts, rawRadii, nodes);
 
     const cum = [0];
     for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + dist(pts[i], pts[i - 1]);
@@ -89,27 +79,15 @@ function addTube(P, C, I, path, nodes, col) {
     const GL = Math.max(2, Math.round(total / 2.5)); // length noise cells
 
     for (let i = 0; i < n; i++) {
-        let p = pts[i];
+        const p = pts[i];
         const nrm = normals[i];
         const bin = binormals[i];
-        let r = radii[i];
+        const r = radii[i];
         const zb = Math.max(0, p[2]);
         const along = (i / (n - 1)) * GL;
-        const baseFade = junction.base
-            ? Math.exp(-cum[i] / junction.baseLength)
-            : 0;
-        const forkFade = junction.fork
-            ? Math.exp(-(total - cum[i]) / junction.forkLength)
-            : 0;
-
-        if (baseFade > 0.01) {
-            p = add(p, scale(junction.branchDir, junction.surfaceOffset * baseFade));
-            r = Math.min(r, junction.childRadius
-                + (junction.parentRadius - junction.childRadius) * 0.75 * baseFade);
-        }
 
         const flare = 1 + 0.55 * Math.exp(-zb / 2.6); // trunk-foot root flare
-        const forkFlare = 1 + FORK_FLARE * forkFade;
+        const collar = 1 + COLLAR * Math.exp(-cum[i] / 1.6); // swelling at limb base
         const bulge = 1 + BULGE * (noise1(seed, cum[i] * 0.6) - 0.5) * 2;
 
         for (let s = 0; s <= RADIAL; s++) {
@@ -117,11 +95,10 @@ function addTube(P, C, I, path, nodes, col) {
             const ca = Math.cos(ang);
             const sa = Math.sin(ang);
             const lump = 1 + LUMP * (gridNoise(seed, (s / RADIAL) * GA, along) - 0.5) * 2;
+            const rr = r * flare * collar * bulge * lump;
             const dx = ca * nrm[0] + sa * bin[0];
             const dy = ca * nrm[1] + sa * bin[1];
             const dz = ca * nrm[2] + sa * bin[2];
-            const collar = junctionCollar([dx, dy, dz], junction.parentDir, baseFade);
-            const rr = r * flare * forkFlare * bulge * lump * collar;
             P.push(p[0] + dx * rr, p[1] + dy * rr, p[2] + dz * rr);
             C.push(col.r, col.g, col.b);
         }
@@ -134,100 +111,6 @@ function addTube(P, C, I, path, nodes, col) {
             const b = startVert + (i + 1) * ring + s;
             const c = startVert + (i + 1) * ring + (s + 1);
             const d = startVert + i * ring + (s + 1);
-            I.push(a, b, d, b, c, d);
-        }
-    }
-}
-
-function junctionInfo(path, ids, rawPts, rawRadii, nodes) {
-    const startNode = nodes[ids[0]];
-    const endNode = nodes[ids[ids.length - 1]];
-    const parentNode = startNode.parentId == null ? null : nodes[startNode.parentId];
-    const branchDir = normalize(sub(rawPts[1], rawPts[0]));
-    const parentDir = parentNode
-        ? normalize(sub(startNode.position, parentNode.position))
-        : null;
-    const parentRadius = rawRadii[0];
-    const childRadius = rawRadii[1] ?? rawRadii[0];
-
-    return {
-        base: path.role === 'branch' && !!parentDir,
-        fork: endNode.children.length > 0,
-        branchDir,
-        parentDir,
-        parentRadius,
-        childRadius,
-        baseLength: Math.max(1.0, parentRadius * 2.2),
-        forkLength: Math.max(0.8, rawRadii[rawRadii.length - 1] * 2.0),
-        surfaceOffset: Math.min(parentRadius * 0.22, childRadius * 0.55),
-    };
-}
-
-function junctionCollar(radial, parentDir, baseFade) {
-    if (!parentDir || baseFade <= 0.01) return 1;
-
-    const parentSide = Math.max(0, -dot(radial, parentDir));
-    const underside = Math.max(0, -radial[2]);
-    const shoulder = 0.28 + parentSide * 0.72 + underside * 0.12;
-    return 1 + COLLAR * baseFade * shoulder;
-}
-
-function isForkNode(node) {
-    return node.radius >= HUB_MIN_RADIUS && node.children.length > 1;
-}
-
-function addForkHub(P, C, I, node, nodes, col) {
-    const parent = node.parentId == null ? null : nodes[node.parentId];
-    const parentDir = parent
-        ? normalize(sub(node.position, parent.position))
-        : [0, 0, 1];
-    const childDirs = node.children
-        .map((id) => normalize(sub(nodes[id].position, node.position)))
-        .filter((d) => len(d) > 1e-6);
-    const childAvg = normalize(childDirs.reduce((a, d) => add(a, d), [0, 0, 0]));
-    let xAxis = sub(childAvg, scale(parentDir, dot(childAvg, parentDir)));
-    if (len(xAxis) < 1e-4) xAxis = perp(parentDir);
-    else xAxis = normalize(xAxis);
-    const yAxis = normalize(cross(parentDir, xAxis));
-    const zAxis = parentDir;
-
-    const countBoost = Math.min(node.children.length, 5) * 0.035;
-    const rx = node.radius * (1.04 + countBoost);
-    const ry = node.radius * 0.88;
-    const rz = node.radius * 0.72;
-    const center = add(node.position, scale(childAvg, node.radius * 0.10));
-    const startVert = P.length / 3;
-    const seed = node.id + 9001;
-
-    for (let r = 0; r <= HUB_RINGS; r++) {
-        const v = r / HUB_RINGS;
-        const theta = v * Math.PI;
-        const st = Math.sin(theta);
-        const ct = Math.cos(theta);
-
-        for (let s = 0; s <= HUB_SEGMENTS; s++) {
-            const u = s / HUB_SEGMENTS;
-            const phi = u * Math.PI * 2;
-            const cp = Math.cos(phi);
-            const sp = Math.sin(phi);
-            const lump = 1 + 0.06 * (gridNoise(seed, u * GA, v * GA) - 0.5) * 2;
-            const local = add(
-                add(scale(xAxis, cp * st * rx * lump), scale(yAxis, sp * st * ry * lump)),
-                scale(zAxis, ct * rz * lump),
-            );
-            const p = add(center, local);
-            P.push(p[0], p[1], p[2]);
-            C.push(col.r, col.g, col.b);
-        }
-    }
-
-    const ring = HUB_SEGMENTS + 1;
-    for (let r = 0; r < HUB_RINGS; r++) {
-        for (let s = 0; s < HUB_SEGMENTS; s++) {
-            const a = startVert + r * ring + s;
-            const b = startVert + (r + 1) * ring + s;
-            const c = startVert + (r + 1) * ring + (s + 1);
-            const d = startVert + r * ring + (s + 1);
             I.push(a, b, d, b, c, d);
         }
     }
