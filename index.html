@@ -3,57 +3,84 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>tree-d — Skeleton Viewer</title>
+    <title>tree-d</title>
     <link rel="stylesheet" href="index.css">
 </head>
 <body>
-    <div id="app">
+    <app-shell>
 
-        <!-- Controls -->
-        <aside id="sidebar">
-            <h1 id="brand">tree-d</h1>
-            <p class="subtitle">procedural tree skeleton</p>
+        <!-- NORTH: app toolbar -->
+        <header slot="north" id="topbar">
+            <span class="brand">▲ tree-d</span>
 
-            <div class="control-group">
-                <label for="species-select">Species</label>
+            <label class="tb-field">Species
                 <select id="species-select"></select>
-            </div>
-
-            <div class="control-group">
-                <label for="age-select">Age class</label>
+            </label>
+            <label class="tb-field">Age
                 <select id="age-select">
                     <option value="young">Young</option>
                     <option value="mature" selected>Mature</option>
                     <option value="old">Old</option>
                 </select>
-            </div>
-
-            <div class="control-group">
-                <label for="seed-input">Seed</label>
-                <div class="row">
+            </label>
+            <label class="tb-field">Seed
+                <span class="seed-row">
                     <input id="seed-input" type="number" value="1" min="0" step="1">
                     <button id="btn-random" type="button" title="Random seed">↻</button>
+                </span>
+            </label>
+            <button id="btn-regenerate" type="button" class="primary">Regenerate</button>
+
+            <span class="tb-spacer"></span>
+
+            <label class="tb-field">Name
+                <input id="name-input" type="text" placeholder="my live oak">
+            </label>
+            <button id="btn-save" type="button">Save</button>
+        </header>
+
+        <!-- WEST: saved trees -->
+        <aside slot="west" id="west-panel">
+            <h2 class="panel-title">Saved trees</h2>
+            <div id="saved-host"></div>
+        </aside>
+
+        <!-- CENTER: scene container -->
+        <main slot="center" id="scene">
+            <div id="scene-host"></div>
+
+            <div class="overlay overlay-left">
+                <div class="seg" id="grp-proj">
+                    <button data-val="ortho" type="button">Orthographic</button>
+                    <button data-val="perspective" type="button" class="active">Perspective</button>
+                </div>
+                <div class="seg" id="grp-render">
+                    <button data-val="texture" type="button" class="active">Texture</button>
+                    <button data-val="mesh" type="button">Mesh only</button>
+                </div>
+                <div class="seg" id="grp-leaves">
+                    <button data-val="on" type="button">Leaves on</button>
+                    <button data-val="off" type="button" class="active">Leaves off</button>
                 </div>
             </div>
 
-            <button id="btn-regenerate" type="button" class="primary">Regenerate</button>
+            <div class="overlay overlay-right">
+                <button id="btn-grid" type="button" class="toggle active">Grid</button>
+                <button id="btn-figure" type="button" class="toggle active">Figure</button>
+                <button id="btn-fit" type="button">Fit</button>
+            </div>
+        </main>
 
-            <hr class="separator">
-
-            <label class="check"><input id="chk-grid" type="checkbox" checked> Ground grid</label>
-            <label class="check"><input id="chk-depth" type="checkbox" checked> Depth cue</label>
-            <button id="btn-fit" type="button">Fit view</button>
-
-            <hr class="separator">
-
-            <div id="stats"></div>
-            <p class="hint">Drag to orbit · scroll to zoom</p>
+        <!-- EAST: parameters -->
+        <aside slot="east" id="east-panel">
+            <h2 class="panel-title">Parameters</h2>
+            <div id="param-host"></div>
         </aside>
 
-        <!-- Viewport -->
-        <main id="viewport"></main>
+        <!-- SOUTH: status bar -->
+        <footer slot="south" id="statusbar"></footer>
 
-    </div>
+    </app-shell>
 
     <script type="module" src="index.js"></script>
 </body>

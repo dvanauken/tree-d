@@ -1,30 +1,37 @@
 // index.js - Glue only.
 //
-// Wires the model layer (buildTreeModel) to the renderer (SkeletonView) and
-// connects the index.html controls. No tree logic lives here: morphology is in
-// src/model, drawing is in src/render. This file just bootstraps and routes UI
-// events.
+// Bootstraps the Holy Grail shell regions: scene (center), parameter panel
+// (east), saved-trees browser (west), toolbar (north), status bar (south).
+// Routes UI events to the model + renderer in real time. No tree logic here -
+// morphology lives in src/model, drawing in src/render, persistence in
+// src/store.
 
-import { listSpecies } from './src/model/species/index.js';
+import './src/ui/app-shell.js';
+import { getSpecies, listSpecies } from './src/model/species/index.js';
 import { buildTreeModel } from './src/model/TreeModel.js';
-import { SkeletonView } from './src/render/SkeletonView.js';
+import { SceneView } from './src/render/SceneView.js';
+import { ControlPanel } from './src/ui/ControlPanel.js';
+import { SavedTrees } from './src/ui/SavedTrees.js';
+import { saveTree, loadTree } from './src/store/treeStore.js';
 
 document.addEventListener('DOMContentLoaded', () => {
-    const view = new SkeletonView(document.getElementById('viewport'));
+    const $ = (id) => document.getElementById(id);
+
+    const scene = new SceneView($('scene-host'));
+    const panel = new ControlPanel($('param-host'), () => schedule(false));
+    const saved = new SavedTrees($('saved-host'), { onSelect: loadSaved });
 
     const els = {
-        species: document.getElementById('species-select'),
-        age: document.getElementById('age-select'),
-        seed: document.getElementById('seed-input'),
-        random: document.getElementById('btn-random'),
-        regenerate: document.getElementById('btn-regenerate'),
-        grid: document.getElementById('chk-grid'),
-        depth: document.getElementById('chk-depth'),
-        fit: document.getElementById('btn-fit'),
-        stats: document.getElementById('stats'),
+        species: $('species-select'),
+        age: $('age-select'),
+        seed: $('seed-input'),
+        random: $('btn-random'),
+        regenerate: $('btn-regenerate'),
+        name: $('name-input'),
+        save: $('btn-save'),
+        status: $('statusbar'),
     };
 
-    // Populate species dropdown from the registry.
     for (const { key, commonName } of listSpecies()) {
         const opt = document.createElement('option');
         opt.value = key;
@@ -32,53 +39,112 @@ document.addEventListener('DOMContentLoaded', () => {
         els.species.appendChild(opt);
     }
 
-    // Optional initial state from the URL (?species=palm&age=old&seed=3).
-    const q = new URLSearchParams(location.search);
-    if (q.has('species')) els.species.value = q.get('species');
-    if (q.has('age')) els.age.value = q.get('age');
-    if (q.has('seed')) els.seed.value = q.get('seed');
+    // --- Build loop (rAF-coalesced; refit only when asked) -----------------
+
+    let currentModel = null;
+    let needRefit = true;
+    let raf = 0;
+
+    function schedule(refit) {
+        if (refit) needRefit = true;
+        if (raf) return;
+        raf = requestAnimationFrame(() => {
+            raf = 0;
+            rebuild();
+        });
+    }
 
     function rebuild() {
-        const model = buildTreeModel(els.species.value, {
+        currentModel = buildTreeModel(els.species.value, {
             ageClass: els.age.value,
             seed: Number(els.seed.value) || 0,
+            profile: panel.getValues(),
         });
-        view.setModel(model);
-        showStats(model);
+        scene.setModel(currentModel, needRefit);
+        needRefit = false;
+        showStatus(currentModel);
     }
 
-    function showStats(model) {
+    function loadSpeciesIntoPanel() {
+        panel.setValues(getSpecies(els.species.value));
+    }
+
+    function showStatus(model) {
         const m = model.metadata;
-        els.stats.innerHTML = `
-            <div><span class="stat-key">Height</span> <b>${m.height.toFixed(1)} ft</b></div>
-            <div><span class="stat-key">Spread</span> <b>${m.spread.toFixed(1)} ft</b></div>
-            <div><span class="stat-key">Trunk DBH</span> <b>${m.trunkDBH.toFixed(1)} ft</b></div>
-            <div><span class="stat-key">Branches</span> <b>${m.pathCount}</b></div>
-            <div><span class="stat-key">Nodes</span> <b>${m.nodeCount}</b></div>
-        `;
+        const cell = (k, v) => `<div class="status-cell"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+        els.status.innerHTML =
+            `<div class="status-cell grow">${model.commonName}</div>`
+            + cell('height', `${m.height.toFixed(1)} ft`)
+            + cell('spread', `${m.spread.toFixed(1)} ft`)
+            + cell('DBH', `${m.trunkDBH.toFixed(1)} ft`)
+            + cell('branches', m.pathCount)
+            + cell('leaves', m.leafCount)
+            + cell('seed', model.seed);
     }
 
-    els.regenerate.addEventListener('click', rebuild);
-    els.species.addEventListener('change', rebuild);
-    els.age.addEventListener('change', rebuild);
+    // --- Toolbar -----------------------------------------------------------
 
+    els.species.addEventListener('change', () => { loadSpeciesIntoPanel(); schedule(true); });
+    els.age.addEventListener('change', () => schedule(true));
+    els.regenerate.addEventListener('click', () => schedule(true));
+    els.seed.addEventListener('input', () => schedule(false));
     els.random.addEventListener('click', () => {
         els.seed.value = Math.floor(Math.random() * 100000);
-        rebuild();
+        schedule(true);
     });
 
-    els.grid.addEventListener('change', () => {
-        view.showGrid = els.grid.checked;
-        view.redraw();
-    });
-    els.depth.addEventListener('change', () => {
-        view.depthCue = els.depth.checked;
-        view.redraw();
-    });
-    els.fit.addEventListener('click', () => {
-        view.fit();
-        view.redraw();
+    els.save.addEventListener('click', async () => {
+        const name = (els.name.value || '').trim();
+        if (!name) { els.name.focus(); return; }
+        await saveTree({
+            name,
+            speciesKey: els.species.value,
+            commonName: getSpecies(els.species.value).commonName,
+            ageClass: els.age.value,
+            seed: Number(els.seed.value) || 0,
+            profile: panel.getValues(),
+            savedAt: Date.now(),
+        });
+        saved.refresh();
     });
 
-    rebuild();
+    async function loadSaved(name) {
+        const rec = await loadTree(name);
+        if (!rec) return;
+        els.species.value = rec.speciesKey;
+        els.age.value = rec.ageClass;
+        els.seed.value = rec.seed;
+        els.name.value = rec.name;
+        if (rec.profile) panel.setValues(rec.profile);
+        else loadSpeciesIntoPanel();
+        schedule(true);
+    }
+
+    // --- Scene overlays ----------------------------------------------------
+
+    function segGroup(id, handler) {
+        const g = $(id);
+        g.addEventListener('click', (e) => {
+            const b = e.target.closest('button');
+            if (!b) return;
+            for (const c of g.children) c.classList.toggle('active', c === b);
+            handler(b.dataset.val);
+        });
+    }
+    segGroup('grp-proj', (v) => scene.setProjection(v));
+    segGroup('grp-render', (v) => scene.setRenderMode(v));
+    segGroup('grp-leaves', (v) => scene.setShowLeaves(v === 'on'));
+
+    const toggle = (id, fn) => {
+        const b = $(id);
+        b.addEventListener('click', () => fn(b.classList.toggle('active')));
+    };
+    toggle('btn-grid', (on) => scene.setShowGrid(on));
+    toggle('btn-figure', (on) => scene.setShowFigure(on));
+    $('btn-fit').addEventListener('click', () => scene.fit());
+
+    // --- Initial tree ------------------------------------------------------
+
+    loadSpeciesIntoPanel();
+    schedule(true);
 });
