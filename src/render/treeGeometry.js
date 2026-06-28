@@ -7,7 +7,7 @@
 // cards.
 
 import * as THREE from '../../vendor/three.module.js';
-import { sub, scale, dot, cross, len, normalize, rotateAxis, perp } from '../model/vec3.js';
+import { add, sub, scale, dot, cross, len, normalize, rotateAxis, perp } from '../model/vec3.js';
 
 const RADIAL = 12; // sides per tube ring (smooth limbs)
 
@@ -51,13 +51,24 @@ const GA = 6; // angular noise cells (wraps)
 const LUMP = 0.11; // cross-section irregularity
 const BULGE = 0.08; // length-wise thickness variation
 const COLLAR = 0.20; // junction swelling at each limb base
+const CURVE_TENSION = 0.75; // lower than Catmull-Rom to avoid fork overshoot
+const SMOOTH_STEPS = {
+    trunk: 4,
+    primary: 4,
+    secondary: 3,
+    tertiary: 3,
+    twig: 2,
+};
 
 function addTube(P, C, I, path, nodes, col) {
     const ids = path.nodeIds;
-    const n = ids.length;
-    if (n < 2) return;
-    const pts = ids.map((id) => nodes[id].position);
-    const radii = ids.map((id) => nodes[id].radius);
+    if (ids.length < 2) return;
+    const rawPts = ids.map((id) => nodes[id].position);
+    const rawRadii = ids.map((id) => nodes[id].radius);
+    const smoothed = smoothPath(rawPts, rawRadii, path.order);
+    const pts = smoothed.pts;
+    const radii = smoothed.radii;
+    const n = pts.length;
     const { normals, binormals } = frames(pts);
     const seed = path.id + 1;
     const startVert = P.length / 3;
@@ -103,6 +114,55 @@ function addTube(P, C, I, path, nodes, col) {
             I.push(a, b, d, b, c, d);
         }
     }
+}
+
+function smoothPath(rawPts, rawRadii, order) {
+    if (rawPts.length < 3) return { pts: rawPts, radii: rawRadii };
+
+    const steps = SMOOTH_STEPS[order] ?? 3;
+    const pts = [];
+    const radii = [];
+
+    for (let i = 0; i < rawPts.length - 1; i++) {
+        const p0 = rawPts[i];
+        const p1 = rawPts[i + 1];
+        const m0 = tangent(rawPts, i);
+        const m1 = tangent(rawPts, i + 1);
+        const start = i === 0 ? 0 : 1;
+
+        for (let s = start; s <= steps; s++) {
+            const t = s / steps;
+            pts.push(hermite(p0, p1, m0, m1, t));
+            radii.push(smoothRadius(rawRadii[i], rawRadii[i + 1], t));
+        }
+    }
+
+    return { pts, radii };
+}
+
+function tangent(pts, i) {
+    if (i === 0) return scale(sub(pts[1], pts[0]), CURVE_TENSION);
+    if (i === pts.length - 1) return scale(sub(pts[i], pts[i - 1]), CURVE_TENSION);
+    return scale(sub(pts[i + 1], pts[i - 1]), 0.5 * CURVE_TENSION);
+}
+
+function hermite(p0, p1, m0, m1, t) {
+    const t2 = t * t;
+    const t3 = t2 * t;
+    const h00 = 2 * t3 - 3 * t2 + 1;
+    const h10 = t3 - 2 * t2 + t;
+    const h01 = -2 * t3 + 3 * t2;
+    const h11 = t3 - t2;
+
+    return add(
+        add(scale(p0, h00), scale(m0, h10)),
+        add(scale(p1, h01), scale(m1, h11)),
+    );
+}
+
+function smoothRadius(a, b, t) {
+    const s = t * t * (3 - 2 * t);
+    return a + (b - a) * s;
 }
 
 // Deterministic hash -> [0,1).
