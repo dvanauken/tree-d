@@ -38,6 +38,12 @@ export function buildFoliage(skeleton, rng, opts = {}) {
                     ],
                     size: leafSize * rng.range(0.7, 1.25),
                     tint: rng.next(),
+                    // Euler orientation so leaf cards face varied directions.
+                    rot: [
+                        rng.range(0, Math.PI * 2),
+                        rng.range(0, Math.PI * 2),
+                        rng.range(0, Math.PI * 2),
+                    ],
                 });
             }
         }

@@ -1,24 +1,28 @@
 // SceneView.js - The Scene container: a Three.js view of a TreeModel.
 //
-// Renderer adapter (pipeline stage 7). Owns the WebGL scene, lights, ground,
+// Renderer adapter (pipeline stage 7). Owns the WebGL scene, lighting, ground,
 // sky, dual cameras (perspective / orthographic), orbit control, and a human
-// scale figure. It converts a TreeModel into wood + leaf geometry and displays
-// it; it decides nothing about morphology. Rendering is on-demand.
+// scale figure. Aims for a serious outdoor render: filmic tone mapping, sRGB
+// output, soft sun shadows, textured bark + grass, and atmospheric fog.
 
 import * as THREE from '../../vendor/three.module.js';
 import { OrbitController } from './OrbitController.js';
 import { buildWoodGeometry, buildLeafMesh } from './treeGeometry.js';
+import { makeBarkTexture, makeLeafTexture, makeGrassTexture, makeSkyTexture } from './textures.js';
 
-const SKY_TOP = '#5b9bd5';
-const SKY_BOTTOM = '#d4ebf7';
-const GRASS = 0x2e5e34;
+const HAZE = 0xcde4f2;
 
 export class SceneView {
     constructor(container) {
         this.container = container;
 
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
-        this.renderer.setPixelRatio(window.devicePixelRatio || 1);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        this.renderer.outputEncoding = THREE.sRGBEncoding;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.08;
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         const cv = this.renderer.domElement;
         cv.style.display = 'block';
         cv.style.width = '100%';
@@ -26,23 +30,34 @@ export class SceneView {
         cv.style.touchAction = 'none';
         container.appendChild(cv);
 
-        this.scene = new THREE.Scene();
-        this.scene.background = makeSky();
+        this.tex = {
+            bark: makeBarkTexture(),
+            leaf: makeLeafTexture(),
+            grass: makeGrassTexture(),
+        };
 
-        // Lighting: outdoor hemisphere + key directional + a little fill.
-        this.scene.add(new THREE.HemisphereLight(0xbfe3ff, 0x47602f, 0.95));
-        const sun = new THREE.DirectionalLight(0xffffff, 0.8);
-        sun.position.set(80, 50, 140);
-        this.scene.add(sun);
-        this.scene.add(new THREE.AmbientLight(0xffffff, 0.12));
+        this.scene = new THREE.Scene();
+        this.scene.background = makeSkyTexture();
+        this.scene.fog = new THREE.Fog(HAZE, 300, 1200);
+
+        // Lighting: warm key sun (shadows) + cool sky/ground hemisphere.
+        this.scene.add(new THREE.HemisphereLight(0xa9d4ff, 0x4a5f38, 0.6));
+        this.sun = new THREE.DirectionalLight(0xfff3e0, 2.7);
+        this.sun.castShadow = true;
+        this.sun.shadow.mapSize.set(2048, 2048);
+        this.sun.shadow.bias = -0.0005;
+        this.scene.add(this.sun);
+        this.scene.add(this.sun.target);
+        const fill = new THREE.DirectionalLight(0xdfe8ff, 0.45);
+        fill.position.set(-80, -60, 60);
+        this.scene.add(fill);
 
         this._addGround();
 
-        // Dual cameras share the orbit controller.
         this.fov = 45;
         this.persp = new THREE.PerspectiveCamera(this.fov, 1, 0.1, 100000);
         this.persp.up.set(0, 0, 1);
-        this.ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100000);
+        this.ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, -10000, 100000);
         this.ortho.up.set(0, 0, 1);
         this.projection = 'perspective';
 
@@ -56,7 +71,7 @@ export class SceneView {
         this.wood = null;
         this.leafMesh = null;
 
-        this.renderMode = 'texture'; // 'texture' | 'mesh'
+        this.renderMode = 'texture';
         this.showLeaves = false;
         this.showGrid = true;
         this.showFigure = true;
@@ -83,11 +98,14 @@ export class SceneView {
         this._clearTree();
 
         this.wood = new THREE.Mesh(buildWoodGeometry(model.skeleton), this._woodMaterial());
+        this.wood.castShadow = true;
+        this.wood.receiveShadow = true;
         this.treeGroup.add(this.wood);
 
-        this.leafMesh = buildLeafMesh(model.leaves);
+        this.leafMesh = buildLeafMesh(model.leaves, this.tex.leaf);
         if (this.leafMesh) {
             this.leafMesh.visible = this.showLeaves;
+            this.leafMesh.castShadow = false; // alpha-cut shadows would be square
             this.treeGroup.add(this.leafMesh);
         }
 
@@ -101,17 +119,28 @@ export class SceneView {
 
     frame(model) {
         const b = model.skeleton.bounds;
-        this.controls.target.set(
-            (b.min[0] + b.max[0]) / 2,
-            (b.min[1] + b.max[1]) / 2,
-            (b.min[2] + b.max[2]) / 2,
-        );
-        const size = Math.max(
-            b.max[0] - b.min[0],
-            b.max[1] - b.min[1],
-            b.max[2] - b.min[2],
-        );
+        const cx = (b.min[0] + b.max[0]) / 2;
+        const cy = (b.min[1] + b.max[1]) / 2;
+        const cz = (b.min[2] + b.max[2]) / 2;
+        this.controls.target.set(cx, cy, cz);
+
+        const size = Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]);
         this.controls.radius = size * 1.4 + 8;
+
+        // Sun + shadow frustum sized to the tree.
+        const d = size * 2.2;
+        this.sun.position.set(cx + d * 0.55, cy + d * 0.35, cz + d);
+        this.sun.target.position.set(cx, cy, cz);
+        const sc = this.sun.shadow.camera;
+        sc.left = -size; sc.right = size;
+        sc.top = size; sc.bottom = -size;
+        sc.near = size * 0.4;
+        sc.far = d * 2.4;
+        sc.updateProjectionMatrix();
+
+        // Atmospheric haze tuned to scene scale.
+        this.scene.fog.near = size * 1.6;
+        this.scene.fog.far = size * 7;
     }
 
     fit() {
@@ -119,8 +148,6 @@ export class SceneView {
         this._updateCamera();
         this.requestRender();
     }
-
-    // --- View toggles ------------------------------------------------------
 
     setProjection(mode) { this.projection = mode; this._updateCamera(); this.requestRender(); }
     setRenderMode(mode) {
@@ -132,25 +159,27 @@ export class SceneView {
     setShowGrid(on) { this.showGrid = on; if (this.grid) this.grid.visible = on; this.requestRender(); }
     setShowFigure(on) { this.showFigure = on; this.figure.visible = on; this.requestRender(); }
 
-    // --- Internals ---------------------------------------------------------
-
     _woodMaterial() {
         return new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            map: this.tex.bark,
             vertexColors: true,
-            roughness: 0.85,
+            roughness: 0.92,
             metalness: 0,
-            flatShading: true,
             wireframe: this.renderMode === 'mesh',
         });
     }
 
     _addGround() {
-        const mat = new THREE.MeshStandardMaterial({ color: GRASS, roughness: 1, metalness: 0 });
-        const plane = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), mat);
-        this.scene.add(plane); // PlaneGeometry lies in XY (normal +Z) = horizontal ground
+        const mat = new THREE.MeshStandardMaterial({ map: this.tex.grass, roughness: 1, metalness: 0 });
+        const plane = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), mat);
+        plane.receiveShadow = true;
+        this.scene.add(plane);
 
-        const grid = new THREE.GridHelper(400, 40, 0x3f7046, 0x356b3d);
-        grid.rotation.x = Math.PI / 2; // XZ -> XY
+        const grid = new THREE.GridHelper(400, 40, 0x2f4a29, 0x33502c);
+        grid.material.transparent = true;
+        grid.material.opacity = 0.35;
+        grid.rotation.x = Math.PI / 2;
         grid.position.z = 0.05;
         this.grid = grid;
         this.scene.add(grid);
@@ -206,38 +235,24 @@ export class SceneView {
     }
 }
 
-// --- Scene props ----------------------------------------------------------
-
-function makeSky() {
-    const c = document.createElement('canvas');
-    c.width = 2;
-    c.height = 256;
-    const ctx = c.getContext('2d');
-    const g = ctx.createLinearGradient(0, 0, 0, 256);
-    g.addColorStop(0, SKY_TOP);
-    g.addColorStop(1, SKY_BOTTOM);
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 2, 256);
-    return new THREE.CanvasTexture(c);
-}
-
 // A simple 6-ft human figure for scale, standing in +Z.
 function makeFigure() {
     const g = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({ color: 0x2b3038, roughness: 0.8, metalness: 0 });
+    const mat = new THREE.MeshStandardMaterial({ color: 0x2b3038, roughness: 0.7, metalness: 0 });
     const part = (w, d, h, x, z) => {
         const m = new THREE.Mesh(new THREE.BoxGeometry(w, d, h), mat);
         m.position.set(x, 0, z);
+        m.castShadow = true;
         g.add(m);
-        return m;
     };
-    part(0.26, 0.26, 3.0, -0.18, 1.5); // left leg
-    part(0.26, 0.26, 3.0, 0.18, 1.5); // right leg
-    part(0.72, 0.36, 2.0, 0, 4.0); // torso
-    part(0.2, 0.2, 1.8, -0.52, 4.1); // left arm
-    part(0.2, 0.2, 1.8, 0.52, 4.1); // right arm
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.45, 16, 12), mat);
+    part(0.26, 0.26, 3.0, -0.18, 1.5);
+    part(0.26, 0.26, 3.0, 0.18, 1.5);
+    part(0.72, 0.36, 2.0, 0, 4.0);
+    part(0.2, 0.2, 1.8, -0.52, 4.1);
+    part(0.2, 0.2, 1.8, 0.52, 4.1);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.45, 20, 14), mat);
     head.position.set(0, 0, 5.55);
+    head.castShadow = true;
     g.add(head);
     return g;
 }
