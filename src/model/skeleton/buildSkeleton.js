@@ -134,7 +134,8 @@ export function buildSkeleton(P, rng) {
                 growBranch(
                     node, normalize(cd),
                     length * P.lengthRatio * rng.range(0.85, 1.05),
-                    radius0 * P.radiusRatio, orderIdx + 1, path.id,
+                    // start from the parent's TIP radius so each fork steps down
+                    radius0 * P.tipFactor * P.radiusRatio, orderIdx + 1, path.id,
                 );
             }
         }
