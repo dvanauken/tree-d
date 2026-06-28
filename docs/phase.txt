@@ -1,63 +1,79 @@
-# Hero Tree Engine Phase Plan
+# Parametric Tree Editor Phase Plan
 
-North star: one excellent hero Live Oak. No LOD, export pipeline, impostors, or
-broad species expansion until the hero tree reads correctly.
+North star: a professional parametric tree creator/editor for site plans.
+Trees must be dimensionally credible, species-based, editable, deterministic,
+and suitable for plan, elevation, and perspective presentation.
+
+Live Oak is the first benchmark species. It is not the whole product.
+
+No clip art. No symbol-only shortcuts. No LOD, export pipeline, impostors, or
+broad species expansion until the generated tree structure is credible.
 
 ## Phase 0: Baseline
 
-- Freeze reference seeds for Live Oak: young, mature, and old.
-- Capture current screenshots and basic model metrics.
-- Confirm there is no active runtime LOD path, and do not add one.
+- Freeze reference Live Oak cases for young, mature, and old.
+- Capture screenshots and model metrics for repeatable comparison.
+- Track plan/elevation/perspective needs against the same generated tree model.
 
-Deliverable: stable before/after references for judging tree changes.
+Deliverable: stable references for judging whether tree changes improve the
+professional site-plan output.
 
-## Phase 1: Radius And Taper
+## Phase 1: Parametric Site-Plan Controls
 
-- Fix twig collapse into the minimum radius.
-- Make trunk-to-primary-to-secondary-to-twig thickness feel believable.
-- Preserve visible step-down at forks without turning branches into wire.
+- Keep all dimensions in feet.
+- Treat height, spread, DBH, clear trunk, crown form, limb count, branch depth,
+  taper, sweep, sag, and foliage density as editable tree parameters.
+- Preserve deterministic seeds so trees can be regenerated and adjusted.
 
-Deliverable: Live Oak has better limb weight, and fine branches remain visible.
+Deliverable: parameter changes produce predictable, dimensionally meaningful
+tree changes.
 
-## Phase 2: Smooth Branch Spines
+## Phase 2: Structural Branch Model
 
-- Move branch paths from harsh polylines toward smooth curve spines.
-- Keep skeleton generation deterministic and simple.
-- Avoid a custom DSL or overbuilt curve system.
+- Move from point-to-point branch paths toward curve-based branch spines.
+- Keep the skeleton editable and deterministic.
+- Avoid decorative mesh tricks that do not improve the underlying structure.
 
-Deliverable: limbs look grown and arched instead of segmented.
+Deliverable: major limbs read as grown structure, not segmented generated tubes.
 
-## Phase 3: Fork And Collar Geometry
+## Phase 3: Major Fork Geometry
 
-- Improve branch junctions.
-- Reduce the separate-tubes-intersecting look.
-- Add better collar swelling and transition behavior before attempting full mesh
-  blending.
+- Stop treating major forks as intersecting independent tubes.
+- Build a real strategy for trunk-to-primary and primary-to-secondary junctions.
+- Use simplified treatment only for smaller branch and twig forks.
 
-Deliverable: forks look organic enough for hero viewing.
+Deliverable: visible scaffold junctions are credible at presentation scale.
 
-## Phase 4: Live Oak Morphology
+## Phase 4: Live Oak Benchmark Morphology
 
-- Tune low scaffold limbs, broad canopy spread, sag, sweep, asymmetry, and
+- Tune low scaffold limbs, broad canopy spread, sweep, sag, asymmetry, and
   old-tree character.
-- Make the silhouette read as Live Oak with leaves off.
+- Make the tree read correctly with leaves off.
+- Use Live Oak as the quality gate for the editor's structural system.
 
-Deliverable: one strong hero Live Oak.
+Deliverable: a benchmark Live Oak suitable for site-plan presentation.
 
-## Phase 5: Foliage Attachment
+## Phase 5: Foliage From Structure
 
-- Replace loose node scatter with leaves attached to twig or stem structure.
-- Keep foliage secondary to branch truth.
-- Avoid hiding weak structure with leaf noise.
+- Attach foliage to branch and twig structure.
+- Avoid using leaves to hide weak branch geometry.
+- Keep foliage editable by density, size, distribution, and species habit.
 
-Deliverable: leaves support the tree shape instead of disguising it.
+Deliverable: foliage supports the generated structure and site-plan use case.
 
-## Phase 6: Verification
+## Phase 6: Site-Plan Views
+
+- Derive plan, elevation, and perspective views from the same parametric model.
+- Keep figure/grid/scale references dimensionally meaningful.
+- Do not use clip art or static symbols as substitutes for generated trees.
+
+Deliverable: the editor produces coherent site-plan views from one tree model.
+
+## Phase 7: Verification
 
 - Run deterministic model checks.
-- Compare reference seeds before and after each phase.
-- Do a browser visual pass.
-- Avoid UI redesign work except when needed for model debugging.
+- Compare reference seeds before and after each engine change.
+- Do visual review in plan, elevation, and perspective.
+- Avoid UI redesign work except when needed for tree editing or verification.
 
-Deliverable: verified hero-tree improvements without drifting into LOD or export
-work.
+Deliverable: verified progress toward a professional parametric tree editor.
