@@ -12,12 +12,14 @@ import { sub, scale, dot, cross, len, normalize, rotateAxis, perp } from '../mod
 const RADIAL = 12; // sides per tube ring (smooth limbs)
 
 // Plain wood colours, lightening slightly with branch order.
+// Bark albedo: warm dark-brown trunk, lightening slightly toward twigs.
+// Kept mid-dark so the sun doesn't wash them pale.
 const ORDER_COLOR = {
-    trunk: 0x5a4632,
-    primary: 0x65503a,
-    secondary: 0x705a42,
-    tertiary: 0x7c664c,
-    twig: 0x887056,
+    trunk:     0x140c05,
+    primary:   0x0f0904,
+    secondary: 0x130c06,
+    tertiary:  0x170e08,
+    twig:      0x1a110a,
 };
 
 export function buildWoodGeometry(skeleton) {

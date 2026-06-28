@@ -6,14 +6,29 @@
 
 import * as THREE from '../../vendor/three.module.js';
 
-// A calm, low-saturation sky gradient.
+// Blue sky gradient: deep blue at zenith fading to pale horizon.
 export function makeSkyTexture() {
     const c = canvas(4, 512);
     const x = c.getContext('2d');
     const g = x.createLinearGradient(0, 0, 0, 512);
-    g.addColorStop(0.0, '#aac3da');
-    g.addColorStop(0.6, '#cdddea');
-    g.addColorStop(1.0, '#e9eef1');
+    g.addColorStop(0.0, '#1a6bbf');   /* deep sky blue at top */
+    g.addColorStop(0.5, '#5ba3e0');   /* mid blue */
+    g.addColorStop(1.0, '#c8dff5');   /* pale blue-white at horizon */
+    x.fillStyle = g;
+    x.fillRect(0, 0, 4, 512);
+    const t = new THREE.CanvasTexture(c);
+    t.encoding = THREE.sRGBEncoding;
+    return t;
+}
+
+// Grass ground texture: continuous gradient from rich green to deep dark green.
+// No tiling — one stretch across the whole plane.
+export function makeGroundTexture() {
+    const c = canvas(4, 512);
+    const x = c.getContext('2d');
+    const g = x.createLinearGradient(0, 0, 0, 512);
+    g.addColorStop(0.0, '#1d460d');   /* rich mid green × 0.5 */
+    g.addColorStop(1.0, '#071e04');   /* deep dark green × 0.5 */
     x.fillStyle = g;
     x.fillRect(0, 0, 4, 512);
     const t = new THREE.CanvasTexture(c);

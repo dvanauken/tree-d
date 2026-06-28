@@ -1,0 +1,63 @@
+# Hero Tree Engine Phase Plan
+
+North star: one excellent hero Live Oak. No LOD, export pipeline, impostors, or
+broad species expansion until the hero tree reads correctly.
+
+## Phase 0: Baseline
+
+- Freeze reference seeds for Live Oak: young, mature, and old.
+- Capture current screenshots and basic model metrics.
+- Confirm there is no active runtime LOD path, and do not add one.
+
+Deliverable: stable before/after references for judging tree changes.
+
+## Phase 1: Radius And Taper
+
+- Fix twig collapse into the minimum radius.
+- Make trunk-to-primary-to-secondary-to-twig thickness feel believable.
+- Preserve visible step-down at forks without turning branches into wire.
+
+Deliverable: Live Oak has better limb weight, and fine branches remain visible.
+
+## Phase 2: Smooth Branch Spines
+
+- Move branch paths from harsh polylines toward smooth curve spines.
+- Keep skeleton generation deterministic and simple.
+- Avoid a custom DSL or overbuilt curve system.
+
+Deliverable: limbs look grown and arched instead of segmented.
+
+## Phase 3: Fork And Collar Geometry
+
+- Improve branch junctions.
+- Reduce the separate-tubes-intersecting look.
+- Add better collar swelling and transition behavior before attempting full mesh
+  blending.
+
+Deliverable: forks look organic enough for hero viewing.
+
+## Phase 4: Live Oak Morphology
+
+- Tune low scaffold limbs, broad canopy spread, sag, sweep, asymmetry, and
+  old-tree character.
+- Make the silhouette read as Live Oak with leaves off.
+
+Deliverable: one strong hero Live Oak.
+
+## Phase 5: Foliage Attachment
+
+- Replace loose node scatter with leaves attached to twig or stem structure.
+- Keep foliage secondary to branch truth.
+- Avoid hiding weak structure with leaf noise.
+
+Deliverable: leaves support the tree shape instead of disguising it.
+
+## Phase 6: Verification
+
+- Run deterministic model checks.
+- Compare reference seeds before and after each phase.
+- Do a browser visual pass.
+- Avoid UI redesign work except when needed for model debugging.
+
+Deliverable: verified hero-tree improvements without drifting into LOD or export
+work.

@@ -11,7 +11,7 @@
 
         <!-- NORTH: app toolbar -->
         <header slot="north" id="topbar">
-            <span class="brand">▲ tree-d</span>
+            <span class="brand">&#9650; tree-d</span>
 
             <label class="tb-field">Species
                 <select id="species-select"></select>
@@ -25,8 +25,8 @@
             </label>
             <label class="tb-field">Seed
                 <span class="seed-row">
-                    <input id="seed-input" type="number" value="1" min="0" step="1">
-                    <button id="btn-random" type="button" title="Random seed">↻</button>
+                    <input id="seed-input" type="number" value="1" min="0" max="999999" step="1">
+                    <button id="btn-random" type="button">New Seed</button>
                 </span>
             </label>
             <button id="btn-regenerate" type="button" class="primary">Regenerate</button>
@@ -46,27 +46,37 @@
         </aside>
 
         <!-- CENTER: scene container -->
-        <main slot="center" id="scene">
+        <main slot="center" id="scene" aria-label="Tree viewport">
             <div id="scene-host"></div>
 
             <div class="overlay overlay-left">
-                <div class="seg" id="grp-proj">
-                    <button data-val="ortho" type="button">Orthographic</button>
-                    <button data-val="perspective" type="button" class="active">Perspective</button>
+                <div class="seg" id="grp-proj" role="group" aria-label="Projection">
+                    <button data-val="ortho" type="button" aria-pressed="false">Ortho</button>
+                    <button data-val="perspective" type="button" class="active" aria-pressed="true">Perspective</button>
                 </div>
-                <div class="seg" id="grp-render">
-                    <button data-val="texture" type="button" class="active">Texture</button>
-                    <button data-val="mesh" type="button">Mesh only</button>
+                <div class="seg" id="grp-render" role="group" aria-label="Render mode">
+                    <button data-val="texture" type="button" class="active" aria-pressed="true">Textured</button>
+                    <button data-val="mesh" type="button" aria-pressed="false">Wireframe</button>
                 </div>
-                <div class="seg" id="grp-leaves">
-                    <button data-val="on" type="button">Leaves on</button>
-                    <button data-val="off" type="button" class="active">Leaves off</button>
+                <div class="seg" id="grp-fov" role="group" aria-label="Field of view">
+                    <button data-val="30" type="button" aria-label="30° field of view" aria-pressed="false">30°</button>
+                    <button data-val="50" type="button" aria-label="50° field of view" aria-pressed="false">50°</button>
+                </div>
+                <div class="seg" id="grp-view" role="group" aria-label="View preset">
+                    <button data-val="eye"  type="button" aria-pressed="false">Eye</button>
+                    <button data-val="elev" type="button" aria-pressed="false">Elev</button>
+                    <button data-val="plan" type="button" aria-pressed="false">Plan</button>
                 </div>
             </div>
 
             <div class="overlay overlay-right">
-                <button id="btn-grid" type="button" class="toggle active">Grid</button>
-                <button id="btn-figure" type="button" class="toggle active">Figure</button>
+                <button id="btn-leaves" type="button" class="toggle" aria-pressed="false">Leaves</button>
+                <button id="btn-grid"   type="button" class="toggle active" aria-pressed="true">Grid</button>
+                <button id="btn-figure" type="button" class="toggle active" aria-pressed="true">Figure</button>
+                <div class="seg" role="group" aria-label="Zoom">
+                    <button id="btn-zoom-out" type="button" aria-label="Zoom out">−</button>
+                    <button id="btn-zoom-in"  type="button" aria-label="Zoom in">+</button>
+                </div>
                 <button id="btn-fit" type="button">Fit</button>
             </div>
         </main>
@@ -77,8 +87,9 @@
             <div id="param-host"></div>
         </aside>
 
-        <!-- SOUTH: status bar -->
-        <footer slot="south" id="statusbar"></footer>
+        <!-- SOUTH: status bar — live region so screen readers announce updates -->
+        <div slot="south" id="statusbar"
+             role="status" aria-live="polite" aria-label="Tree statistics"></div>
 
     </app-shell>
 

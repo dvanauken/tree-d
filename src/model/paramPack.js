@@ -49,6 +49,7 @@ export function resolveParams(species, intent) {
 
         // Per-branch shaping (radians)
         tipFactor: 0.55,
+        forkFactor: 0.95,
         minRadius: 0.03,
         sweepUp: deg(species.sweepPerSegDeg),
         sag: deg(species.sagPerSegDeg),

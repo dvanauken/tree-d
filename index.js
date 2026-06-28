@@ -22,14 +22,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const saved = new SavedTrees($('saved-host'), { onSelect: loadSaved });
 
     const els = {
-        species: $('species-select'),
-        age: $('age-select'),
-        seed: $('seed-input'),
-        random: $('btn-random'),
+        species:    $('species-select'),
+        age:        $('age-select'),
+        seed:       $('seed-input'),
+        random:     $('btn-random'),
         regenerate: $('btn-regenerate'),
-        name: $('name-input'),
-        save: $('btn-save'),
-        status: $('statusbar'),
+        name:       $('name-input'),
+        save:       $('btn-save'),
+        status:     $('statusbar'),
     };
 
     for (const { key, commonName } of listSpecies()) {
@@ -71,15 +71,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function showStatus(model) {
         const m = model.metadata;
-        const cell = (k, v) => `<div class="status-cell"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+        const cell = (k, v) =>
+            `<div class="status-cell"><span class="k">${k}</span><span class="v">${v}</span></div>`;
         els.status.innerHTML =
             `<div class="status-cell grow">${model.commonName}</div>`
-            + cell('height', `${m.height.toFixed(1)} ft`)
-            + cell('spread', `${m.spread.toFixed(1)} ft`)
-            + cell('DBH', `${m.trunkDBH.toFixed(1)} ft`)
+            + cell('height',   `${m.height.toFixed(1)} ft`)
+            + cell('spread',   `${m.spread.toFixed(1)} ft`)
+            + cell('DBH',      `${m.trunkDBH.toFixed(1)} ft`)
             + cell('branches', m.pathCount)
-            + cell('leaves', m.leafCount)
-            + cell('seed', model.seed);
+            + cell('leaves',   m.leafCount)
+            + cell('seed',     model.seed);
     }
 
     // --- Toolbar -----------------------------------------------------------
@@ -89,7 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
     els.regenerate.addEventListener('click', () => schedule(true));
     els.seed.addEventListener('input', () => schedule(false));
     els.random.addEventListener('click', () => {
-        els.seed.value = Math.floor(Math.random() * 100000);
+        els.seed.value = freshSeed();
         schedule(true);
     });
 
@@ -98,12 +99,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!name) { els.name.focus(); return; }
         await saveTree({
             name,
-            speciesKey: els.species.value,
-            commonName: getSpecies(els.species.value).commonName,
-            ageClass: els.age.value,
-            seed: Number(els.seed.value) || 0,
-            profile: panel.getValues(),
-            savedAt: Date.now(),
+            speciesKey:  els.species.value,
+            commonName:  getSpecies(els.species.value).commonName,
+            ageClass:    els.age.value,
+            seed:        Number(els.seed.value) || 0,
+            profile:     panel.getValues(),
+            savedAt:     Date.now(),
         });
         saved.refresh();
     });
@@ -112,35 +113,76 @@ document.addEventListener('DOMContentLoaded', () => {
         const rec = await loadTree(name);
         if (!rec) return;
         els.species.value = rec.speciesKey;
-        els.age.value = rec.ageClass;
-        els.seed.value = rec.seed;
-        els.name.value = rec.name;
+        els.age.value     = rec.ageClass;
+        els.seed.value    = rec.seed;
+        els.name.value    = rec.name;
         if (rec.profile) panel.setValues(rec.profile);
-        else loadSpeciesIntoPanel();
+        else             loadSpeciesIntoPanel();
         schedule(true);
+    }
+
+    function freshSeed() {
+        const current = Number(els.seed.value) || 0;
+        const max = Number(els.seed.max) || 999999;
+        let next = current;
+
+        for (let i = 0; i < 6 && next === current; i++) {
+            if (window.crypto && window.crypto.getRandomValues) {
+                const buf = new Uint32Array(1);
+                window.crypto.getRandomValues(buf);
+                next = buf[0] % (max + 1);
+            } else {
+                next = Math.floor(Math.random() * (max + 1));
+            }
+        }
+
+        return next === current ? (current + 1) % (max + 1) : next;
     }
 
     // --- Scene overlays ----------------------------------------------------
 
+    // Segmented control: one active at a time, syncs aria-pressed.
     function segGroup(id, handler) {
         const g = $(id);
         g.addEventListener('click', (e) => {
             const b = e.target.closest('button');
             if (!b) return;
-            for (const c of g.children) c.classList.toggle('active', c === b);
+            for (const c of g.children) {
+                const on = c === b;
+                c.classList.toggle('active', on);
+                c.setAttribute('aria-pressed', on ? 'true' : 'false');
+            }
             handler(b.dataset.val);
         });
     }
-    segGroup('grp-proj', (v) => scene.setProjection(v));
+    segGroup('grp-proj',   (v) => scene.setProjection(v));
     segGroup('grp-render', (v) => scene.setRenderMode(v));
-    segGroup('grp-leaves', (v) => scene.setShowLeaves(v === 'on'));
+    segGroup('grp-fov',    (v) => scene.setFieldOfView(Number(v)));
+    segGroup('grp-view',   (v) => {
+        const proj = scene.setView(v);
+        // Keep the Ortho/Perspective seg in sync with whatever setView chose.
+        const g = $('grp-proj');
+        for (const c of g.children) {
+            const on = c.dataset.val === proj;
+            c.classList.toggle('active', on);
+            c.setAttribute('aria-pressed', on ? 'true' : 'false');
+        }
+    });
 
-    const toggle = (id, fn) => {
+    // Toggle button: independent on/off state, syncs aria-pressed.
+    function toggle(id, fn) {
         const b = $(id);
-        b.addEventListener('click', () => fn(b.classList.toggle('active')));
-    };
-    toggle('btn-grid', (on) => scene.setShowGrid(on));
+        b.addEventListener('click', () => {
+            const on = b.classList.toggle('active');
+            b.setAttribute('aria-pressed', on ? 'true' : 'false');
+            fn(on);
+        });
+    }
+    toggle('btn-leaves', (on) => scene.setShowLeaves(on));
+    toggle('btn-grid',   (on) => scene.setShowGrid(on));
     toggle('btn-figure', (on) => scene.setShowFigure(on));
+    $('btn-zoom-out').addEventListener('click', () => scene.zoom(1.5));
+    $('btn-zoom-in' ).addEventListener('click', () => scene.zoom(1 / 1.5));
     $('btn-fit').addEventListener('click', () => scene.fit());
 
     // --- Initial tree ------------------------------------------------------

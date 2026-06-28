@@ -21,14 +21,18 @@ export class SavedTrees {
         this.host.appendChild(this.empty);
         this.host.appendChild(this.list);
 
+        // Single delegated handler: distinguish load vs. delete by class.
         this.list.addEventListener('click', (e) => {
-            const li = e.target.closest('li');
-            if (!li) return;
-            const name = li.dataset.name;
-            if (e.target.classList.contains('saved-del')) {
-                deleteTree(name).then(() => this.refresh());
+            const del = e.target.closest('.saved-del');
+            if (del) {
+                const li = del.closest('li');
+                deleteTree(li.dataset.name).then(() => this.refresh());
                 return;
             }
+            const load = e.target.closest('.saved-load');
+            if (!load) return;
+            const li = load.closest('li');
+            const name = li.dataset.name;
             this.activeName = name;
             this._highlight();
             if (this.onSelect) this.onSelect(name);
@@ -45,12 +49,32 @@ export class SavedTrees {
             const li = document.createElement('li');
             li.dataset.name = r.name;
             li.className = 'saved-item';
-            li.innerHTML = `
-                <span class="saved-name"></span>
-                <span class="saved-meta"></span>
-                <button class="saved-del" title="Delete" type="button">✕</button>`;
-            li.querySelector('.saved-name').textContent = r.name;
-            li.querySelector('.saved-meta').textContent = `${r.commonName || r.speciesKey} · seed ${r.seed}`;
+
+            // Load button (keyboard-activatable) spans name + meta.
+            const load = document.createElement('button');
+            load.type = 'button';
+            load.className = 'saved-load';
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'saved-name';
+            nameSpan.textContent = r.name;
+
+            const metaSpan = document.createElement('span');
+            metaSpan.className = 'saved-meta';
+            metaSpan.textContent = `${r.commonName || r.speciesKey} · seed ${r.seed}`;
+
+            load.appendChild(nameSpan);
+            load.appendChild(metaSpan);
+
+            // Delete button with per-item accessible label.
+            const del = document.createElement('button');
+            del.type = 'button';
+            del.className = 'saved-del';
+            del.setAttribute('aria-label', `Delete ${r.name}`);
+            del.textContent = '✕';
+
+            li.appendChild(load);
+            li.appendChild(del);
             this.list.appendChild(li);
         }
         this._highlight();

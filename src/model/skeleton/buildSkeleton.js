@@ -131,11 +131,14 @@ export function buildSkeleton(P, rng) {
                 const k = perp(tipDir);
                 let cd = rotateAxis(tipDir, k, div); // tilt off parent by divergence
                 cd = rotateAxis(cd, tipDir, azc); // spin around the parent direction
+                const childRadius = Math.max(
+                    P.minRadius,
+                    Math.min(radius0 * P.radiusRatio, node.radius * P.forkFactor),
+                );
                 growBranch(
                     node, normalize(cd),
                     length * P.lengthRatio * rng.range(0.85, 1.05),
-                    // start from the parent's TIP radius so each fork steps down
-                    radius0 * P.tipFactor * P.radiusRatio, orderIdx + 1, path.id,
+                    childRadius, orderIdx + 1, path.id,
                 );
             }
         }

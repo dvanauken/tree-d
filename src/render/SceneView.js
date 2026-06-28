@@ -8,9 +8,7 @@
 import * as THREE from '../../vendor/three.module.js';
 import { OrbitController } from './OrbitController.js';
 import { buildWoodGeometry, buildLeafMesh } from './treeGeometry.js';
-import { makeLeafTexture, makeSkyTexture } from './textures.js';
-
-const GROUND = 0x5f7351;
+import { makeLeafTexture, makeSkyTexture, makeGroundTexture } from './textures.js';
 
 export class SceneView {
     constructor(container) {
@@ -21,26 +19,29 @@ export class SceneView {
         this.renderer.outputEncoding = THREE.sRGBEncoding;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this.renderer.toneMappingExposure = 1.08;
-        this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         const cv = this.renderer.domElement;
         cv.style.display = 'block';
         cv.style.width = '100%';
         cv.style.height = '100%';
         cv.style.touchAction = 'none';
+        cv.tabIndex = 0;
+        cv.setAttribute('role', 'img');
+        cv.setAttribute(
+            'aria-label',
+            'Interactive 3D tree viewport. Drag to orbit, Shift-drag or right-drag to pan, scroll to zoom. When focused, arrow keys orbit, Shift plus arrow keys pan, plus and minus zoom, and Home fits the tree.',
+        );
         container.appendChild(cv);
 
         this.tex = { leaf: makeLeafTexture() };
 
         this.scene = new THREE.Scene();
         this.scene.background = makeSkyTexture();
+        // Fog color matches sky horizon so the far ground fades naturally.
+        this.scene.fog = new THREE.Fog(0xc8dff5, 300, 1800);
 
         // Lighting: warm key sun (shadows) + cool sky/ground hemisphere.
-        this.scene.add(new THREE.HemisphereLight(0xa9d4ff, 0x4a5f38, 0.6));
-        this.sun = new THREE.DirectionalLight(0xfff3e0, 2.7);
-        this.sun.castShadow = true;
-        this.sun.shadow.mapSize.set(2048, 2048);
-        this.sun.shadow.bias = -0.0005;
+        this.scene.add(new THREE.HemisphereLight(0xa9d4ff, 0x7a9a60, 1.4));
+        this.sun = new THREE.DirectionalLight(0xfff3e0, 0.9);
         this.scene.add(this.sun);
         this.scene.add(this.sun.target);
         const fill = new THREE.DirectionalLight(0xdfe8ff, 0.45);
@@ -50,6 +51,7 @@ export class SceneView {
         this._addGround();
 
         this.fov = 45;
+        this.orthoScaleFov = 45;
         this.persp = new THREE.PerspectiveCamera(this.fov, 1, 0.1, 100000);
         this.persp.up.set(0, 0, 1);
         this.ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, -10000, 100000);
@@ -78,6 +80,7 @@ export class SceneView {
         this._raf = 0;
         this._w = 1;
         this._h = 1;
+        this._frameSize = 120;
 
         this._ro = new ResizeObserver(() => this._resize());
         this._ro.observe(container);
@@ -93,14 +96,11 @@ export class SceneView {
         this._clearTree();
 
         this.wood = new THREE.Mesh(buildWoodGeometry(model.skeleton), this._woodMaterial());
-        this.wood.castShadow = true;
-        this.wood.receiveShadow = true;
         this.treeGroup.add(this.wood);
 
         this.leafMesh = buildLeafMesh(model.leaves, this.tex.leaf);
         if (this.leafMesh) {
             this.leafMesh.visible = this.showLeaves;
-            this.leafMesh.castShadow = false; // alpha-cut shadows would be square
             this.treeGroup.add(this.leafMesh);
         }
 
@@ -117,21 +117,31 @@ export class SceneView {
         const cx = (b.min[0] + b.max[0]) / 2;
         const cy = (b.min[1] + b.max[1]) / 2;
         const cz = (b.min[2] + b.max[2]) / 2;
-        this.controls.target.set(cx, cy, cz);
 
-        const size = Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]);
-        this.controls.radius = size * 1.4 + 8;
+        const dx = b.max[0] - b.min[0];
+        const dy = b.max[1] - b.min[1];
+        const dz = b.max[2] - b.min[2];
+        const size = Math.max(dx, dy, dz, 1);
+        const sphereRadius = Math.max(Math.hypot(dx, dy, dz) * 0.5, 1);
+        const aspect = Math.max(this._w / this._h, 0.1);
+        const fitFovDegrees = this.projection === 'perspective' ? this.fov : this.orthoScaleFov;
+        const vFov = THREE.MathUtils.degToRad(fitFovDegrees);
+        const hFov = 2 * Math.atan(Math.tan(vFov * 0.5) * aspect);
+        const fitFov = Math.max(Math.min(vFov, hFov), 0.1);
+        const cameraRadius = (sphereRadius / Math.sin(fitFov * 0.5)) * 1.08;
+        this._frameSize = size;
+        this.controls.setFrame(
+            new THREE.Vector3(cx, cy, cz),
+            cameraRadius,
+            {
+                minRadius: Math.max(sphereRadius * 0.18, 2),
+                maxRadius: Math.max(cameraRadius * 8, 200),
+            },
+        );
 
-        // Sun + shadow frustum sized to the tree.
         const d = size * 2.2;
         this.sun.position.set(cx + d * 0.55, cy + d * 0.35, cz + d);
         this.sun.target.position.set(cx, cy, cz);
-        const sc = this.sun.shadow.camera;
-        sc.left = -size; sc.right = size;
-        sc.top = size; sc.bottom = -size;
-        sc.near = size * 0.4;
-        sc.far = d * 2.4;
-        sc.updateProjectionMatrix();
     }
 
     fit() {
@@ -140,7 +150,77 @@ export class SceneView {
         this.requestRender();
     }
 
-    setProjection(mode) { this.projection = mode; this._updateCamera(); this.requestRender(); }
+    zoom(factor) {
+        this.controls.setRadius(this.controls.radius * factor);
+        this._updateCamera();
+        this.requestRender();
+    }
+
+    setFieldOfView(degrees) {
+        this.fov = THREE.MathUtils.clamp(degrees, 20, 85);
+        this._updateCamera();
+        this.requestRender();
+    }
+
+    setView(preset) {
+        const ctrl = this.controls;
+        const tanHalf = Math.tan(THREE.MathUtils.degToRad(this.orthoScaleFov) / 2);
+        const aspect  = Math.max(this._w / this._h, 0.1);
+
+        // Fit a 2D rectangle (screenW × screenH in world units) into the ortho frame.
+        const rectFit = (w, h, pad = 0.55) => {
+            const rH = (h * pad) / tanHalf;
+            const rW = (w * pad) / (aspect * tanHalf);
+            return Math.max(rH, rW, 10);
+        };
+
+        if (preset === 'plan') {
+            ctrl.elevation = Math.PI * 0.499;   // near-vertical, avoids gimbal
+            this.projection = 'ortho';
+            if (this._lastModel) {
+                const b = this._lastModel.skeleton.bounds;
+                ctrl.target.set(
+                    (b.min[0] + b.max[0]) / 2,
+                    (b.min[1] + b.max[1]) / 2,
+                    (b.min[2] + b.max[2]) / 2,
+                );
+                ctrl.setRadius(rectFit(b.max[0] - b.min[0], b.max[1] - b.min[1]));
+            }
+        } else if (preset === 'elev') {
+            ctrl.elevation = 0.0;
+            this.projection = 'ortho';
+            if (this._lastModel) {
+                const b = this._lastModel.skeleton.bounds;
+                const treeW = b.max[0] - b.min[0];
+                const treeH = b.max[2] - b.min[2];
+                // Center the view on the tree; base of tree sits near the bottom.
+                ctrl.target.set(
+                    (b.min[0] + b.max[0]) / 2,
+                    (b.min[1] + b.max[1]) / 2,
+                    b.min[2] + treeH / 2,
+                );
+                ctrl.setRadius(rectFit(treeW, treeH));
+            }
+        } else if (preset === 'eye') {
+            ctrl.elevation = 0.08;              // ~5° — ground stays in frame
+            ctrl.target.z = 6;                  // eye height in feet
+            this.projection = 'perspective';
+            if (this._lastModel) {
+                const b = this._lastModel.skeleton.bounds;
+                const spread = Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1], 1);
+                ctrl.setRadius(Math.max(spread * 1.1, 30));
+            }
+        }
+        this._updateCamera();
+        this.requestRender();
+        return this.projection;
+    }
+
+    setProjection(mode) {
+        this.projection = mode;
+        this._updateCamera();
+        this.requestRender();
+    }
     setRenderMode(mode) {
         this.renderMode = mode;
         if (this.wood) this.wood.material.wireframe = mode === 'mesh';
@@ -156,14 +236,14 @@ export class SceneView {
             vertexColors: true,
             roughness: 0.9,
             metalness: 0,
+            side: THREE.DoubleSide,
             wireframe: this.renderMode === 'mesh',
         });
     }
 
     _addGround() {
-        const mat = new THREE.MeshStandardMaterial({ color: GROUND, roughness: 1, metalness: 0 });
+        const mat = new THREE.MeshStandardMaterial({ map: makeGroundTexture(), roughness: 1, metalness: 0 });
         const plane = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), mat);
-        plane.receiveShadow = true;
         this.scene.add(plane);
 
         // Subtle reference grid (toggleable), close in tone to the ground.
@@ -194,7 +274,7 @@ export class SceneView {
     _updateCamera() {
         const aspect = this._w / this._h;
         const r = this.controls.radius;
-        const halfH = r * Math.tan(THREE.MathUtils.degToRad(this.fov) / 2);
+        const halfH = r * Math.tan(THREE.MathUtils.degToRad(this.orthoScaleFov) / 2);
         const halfW = halfH * aspect;
         this.ortho.left = -halfW;
         this.ortho.right = halfW;
@@ -202,6 +282,9 @@ export class SceneView {
         this.ortho.bottom = -halfH;
         this.ortho.updateProjectionMatrix();
         this.persp.aspect = aspect;
+        this.persp.fov = this.fov;
+        this.persp.near = Math.max(0.05, r / 2000);
+        this.persp.far = Math.max(1000, r + this._frameSize * 6);
         this.persp.updateProjectionMatrix();
         this.controls.apply(this.activeCamera());
     }
