@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>tree-d — Skeleton Viewer</title>
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+    <div id="app">
+
+        <!-- Controls -->
+        <aside id="sidebar">
+            <h1 id="brand">tree-d</h1>
+            <p class="subtitle">procedural tree skeleton</p>
+
+            <div class="control-group">
+                <label for="species-select">Species</label>
+                <select id="species-select"></select>
+            </div>
+
+            <div class="control-group">
+                <label for="age-select">Age class</label>
+                <select id="age-select">
+                    <option value="young">Young</option>
+                    <option value="mature" selected>Mature</option>
+                    <option value="old">Old</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="seed-input">Seed</label>
+                <div class="row">
+                    <input id="seed-input" type="number" value="1" min="0" step="1">
+                    <button id="btn-random" type="button" title="Random seed">↻</button>
+                </div>
+            </div>
+
+            <button id="btn-regenerate" type="button" class="primary">Regenerate</button>
+
+            <hr class="separator">
+
+            <label class="check"><input id="chk-grid" type="checkbox" checked> Ground grid</label>
+            <label class="check"><input id="chk-depth" type="checkbox" checked> Depth cue</label>
+            <button id="btn-fit" type="button">Fit view</button>
+
+            <hr class="separator">
+
+            <div id="stats"></div>
+            <p class="hint">Drag to orbit · scroll to zoom</p>
+        </aside>
+
+        <!-- Viewport -->
+        <main id="viewport"></main>
+
+    </div>
+
+    <script type="module" src="index.js"></script>
+</body>
+</html>
