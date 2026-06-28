@@ -1,100 +1,174 @@
 // treeGeometry.js - Renderer adapter: skeleton/foliage data -> Three.js geometry.
 //
-// Wood: one merged BufferGeometry of smooth tapered tube segments (smooth
-// radial normals + UVs so a bark texture can wrap), vertex-coloured by branch
-// order. Leaves: an InstancedMesh of alpha-cut leaf cards, each positioned,
-// scaled, oriented, and tinted per the foliage data.
+// Wood: one continuous tube per branch (rotation-minimizing frame, no twist),
+// with natural root flare and a subtle buttress near the base. No textures -
+// realism comes from the structure; the surface is plain shaded via computed
+// smooth normals and a per-order brown vertex colour. Leaves: instanced leaf
+// cards.
 
 import * as THREE from '../../vendor/three.module.js';
-import { sub, cross, normalize } from '../model/vec3.js';
+import { sub, scale, dot, cross, len, normalize, rotateAxis, perp } from '../model/vec3.js';
 
-const RADIAL = 10; // sides per tube ring (smooth limbs)
-const V_SCALE = 4; // feet of length per bark-texture tile
+const RADIAL = 12; // sides per tube ring (smooth limbs)
+
+// Plain wood colours, lightening slightly with branch order.
 const ORDER_COLOR = {
-    trunk: 0x4a3526,
-    primary: 0x5b4231,
-    secondary: 0x6f5340,
-    tertiary: 0x80664e,
-    twig: 0x927a60,
+    trunk: 0x5a4632,
+    primary: 0x65503a,
+    secondary: 0x705a42,
+    tertiary: 0x7c664c,
+    twig: 0x887056,
 };
 
 export function buildWoodGeometry(skeleton) {
     const P = [];
-    const N = [];
     const C = [];
-    const U = [];
+    const I = [];
     const nodes = skeleton.nodes;
     const col = new THREE.Color();
 
     for (const path of skeleton.paths) {
-        col.set(ORDER_COLOR[path.order] ?? 0x6f5340);
-        const ids = path.nodeIds;
-        let vlen = 0;
-        for (let i = 0; i < ids.length - 1; i++) {
-            const a = nodes[ids[i]];
-            const b = nodes[ids[i + 1]];
-            const segLen = dist(a.position, b.position);
-            addSegment(P, N, C, U, a.position, b.position, a.radius, b.radius, col,
-                vlen / V_SCALE, (vlen + segLen) / V_SCALE);
-            vlen += segLen;
-        }
+        col.set(ORDER_COLOR[path.order] ?? 0x705a42);
+        addTube(P, C, I, path, nodes, col);
     }
 
     const g = new THREE.BufferGeometry();
+    g.setIndex(I);
     g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
-    g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
+    g.computeVertexNormals();
     return g;
 }
 
-function addSegment(P, N, C, U, a, b, ra, rb, col, va, vb) {
-    let dir = sub(b, a);
-    const L = Math.hypot(dir[0], dir[1], dir[2]);
-    if (L < 1e-6) return;
-    dir = [dir[0] / L, dir[1] / L, dir[2] / L];
+// One continuous tube along a branch path, with a rotation-minimizing frame
+// (no twist). Realism is in the surface, not a texture: organic non-circular
+// cross-sections (value noise around + along), thickness that bulges and
+// pinches, branch-collar swelling where a limb leaves its parent, and root
+// flare at the trunk foot.
+const GA = 6; // angular noise cells (wraps)
+const LUMP = 0.11; // cross-section irregularity
+const BULGE = 0.08; // length-wise thickness variation
+const COLLAR = 0.20; // junction swelling at each limb base
 
-    const ref = Math.abs(dir[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
-    const right = normalize(cross(dir, ref));
-    const up = cross(dir, right);
+function addTube(P, C, I, path, nodes, col) {
+    const ids = path.nodeIds;
+    const n = ids.length;
+    if (n < 2) return;
+    const pts = ids.map((id) => nodes[id].position);
+    const radii = ids.map((id) => nodes[id].radius);
+    const { normals, binormals } = frames(pts);
+    const seed = path.id + 1;
+    const startVert = P.length / 3;
 
-    const ringA = [];
-    const ringB = [];
-    const rn = [];
-    for (let s = 0; s <= RADIAL; s++) {
-        const ang = (s / RADIAL) * Math.PI * 2;
-        const c = Math.cos(ang);
-        const si = Math.sin(ang);
-        const nx = c * right[0] + si * up[0];
-        const ny = c * right[1] + si * up[1];
-        const nz = c * right[2] + si * up[2];
-        rn.push([nx, ny, nz]);
-        ringA.push([a[0] + nx * ra, a[1] + ny * ra, a[2] + nz * ra]);
-        ringB.push([b[0] + nx * rb, b[1] + ny * rb, b[2] + nz * rb]);
+    const cum = [0];
+    for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + dist(pts[i], pts[i - 1]);
+    const total = cum[n - 1] || 1;
+    const GL = Math.max(2, Math.round(total / 2.5)); // length noise cells
+
+    for (let i = 0; i < n; i++) {
+        const p = pts[i];
+        const nrm = normals[i];
+        const bin = binormals[i];
+        const r = radii[i];
+        const zb = Math.max(0, p[2]);
+        const along = (i / (n - 1)) * GL;
+
+        const flare = 1 + 0.55 * Math.exp(-zb / 2.6); // trunk-foot root flare
+        const collar = 1 + COLLAR * Math.exp(-cum[i] / 1.6); // swelling at limb base
+        const bulge = 1 + BULGE * (noise1(seed, cum[i] * 0.6) - 0.5) * 2;
+
+        for (let s = 0; s <= RADIAL; s++) {
+            const ang = (s / RADIAL) * Math.PI * 2;
+            const ca = Math.cos(ang);
+            const sa = Math.sin(ang);
+            const lump = 1 + LUMP * (gridNoise(seed, (s / RADIAL) * GA, along) - 0.5) * 2;
+            const rr = r * flare * collar * bulge * lump;
+            const dx = ca * nrm[0] + sa * bin[0];
+            const dy = ca * nrm[1] + sa * bin[1];
+            const dz = ca * nrm[2] + sa * bin[2];
+            P.push(p[0] + dx * rr, p[1] + dy * rr, p[2] + dz * rr);
+            C.push(col.r, col.g, col.b);
+        }
     }
 
-    for (let s = 0; s < RADIAL; s++) {
-        const t = s + 1;
-        const us = s / RADIAL;
-        const ut = t / RADIAL;
-        vert(P, N, C, U, ringA[s], rn[s], col, us, va);
-        vert(P, N, C, U, ringB[s], rn[s], col, us, vb);
-        vert(P, N, C, U, ringB[t], rn[t], col, ut, vb);
-        vert(P, N, C, U, ringA[s], rn[s], col, us, va);
-        vert(P, N, C, U, ringB[t], rn[t], col, ut, vb);
-        vert(P, N, C, U, ringA[t], rn[t], col, ut, va);
+    const ring = RADIAL + 1;
+    for (let i = 0; i < n - 1; i++) {
+        for (let s = 0; s < RADIAL; s++) {
+            const a = startVert + i * ring + s;
+            const b = startVert + (i + 1) * ring + s;
+            const c = startVert + (i + 1) * ring + (s + 1);
+            const d = startVert + i * ring + (s + 1);
+            I.push(a, b, d, b, c, d);
+        }
     }
 }
 
-function vert(P, N, C, U, p, n, col, u, v) {
-    P.push(p[0], p[1], p[2]);
-    N.push(n[0], n[1], n[2]);
-    C.push(col.r, col.g, col.b);
-    U.push(u, v);
+// Deterministic hash -> [0,1).
+function h2(seed, x, y) {
+    let n = (seed * 73856093) ^ ((x + 1024) * 19349663) ^ ((y + 1024) * 83492791);
+    n = (n ^ (n >>> 13)) >>> 0;
+    n = (n * 1274126177) >>> 0;
+    return n / 4294967296;
+}
+
+// Smooth value noise on a grid that wraps in the angular axis (period GA).
+function gridNoise(seed, fa, fl) {
+    const ia = Math.floor(fa);
+    const il = Math.floor(fl);
+    const ta = fa - ia;
+    const tl = fl - il;
+    const sa = ta * ta * (3 - 2 * ta);
+    const sl = tl * tl * (3 - 2 * tl);
+    const a = h2(seed, ia % GA, il);
+    const b = h2(seed, (ia + 1) % GA, il);
+    const c = h2(seed, ia % GA, il + 1);
+    const d = h2(seed, (ia + 1) % GA, il + 1);
+    const top = a + (b - a) * sa;
+    const bot = c + (d - c) * sa;
+    return top + (bot - top) * sl;
+}
+
+function noise1(seed, x) {
+    const i = Math.floor(x);
+    const t = x - i;
+    const s = t * t * (3 - 2 * t);
+    const a = h2(seed, i, 4096);
+    const b = h2(seed, i + 1, 4096);
+    return a + (b - a) * s;
 }
 
 function dist(a, b) {
     return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+}
+
+// Rotation-minimizing frame along a polyline (parallel transport).
+function frames(pts) {
+    const n = pts.length;
+    const tang = [];
+    for (let i = 0; i < n; i++) {
+        let t;
+        if (i === 0) t = sub(pts[1], pts[0]);
+        else if (i === n - 1) t = sub(pts[n - 1], pts[n - 2]);
+        else t = sub(pts[i + 1], pts[i - 1]);
+        tang.push(normalize(t));
+    }
+    const normals = [perp(tang[0])];
+    for (let i = 1; i < n; i++) {
+        const t0 = tang[i - 1];
+        const t1 = tang[i];
+        let ni = normals[i - 1];
+        const axis = cross(t0, t1);
+        const al = len(axis);
+        if (al > 1e-6) {
+            const ax = scale(axis, 1 / al);
+            const angle = Math.atan2(al, dot(t0, t1));
+            ni = rotateAxis(ni, ax, angle);
+        }
+        ni = normalize(sub(ni, scale(t1, dot(ni, t1)))); // re-orthogonalize
+        normals.push(ni);
+    }
+    const binormals = normals.map((nv, i) => cross(tang[i], nv));
+    return { normals, binormals };
 }
 
 export function buildLeafMesh(leaves, leafTexture) {
@@ -122,7 +196,7 @@ export function buildLeafMesh(leaves, leafTexture) {
     for (let i = 0; i < leaves.length; i++) {
         const lf = leaves[i];
         pos.set(lf.position[0], lf.position[1], lf.position[2]);
-        const sz = lf.size * 2.2; // cards a bit larger than the point spacing
+        const sz = lf.size * 2.2;
         scl.set(sz, sz, sz);
         const r = lf.rot || [0, 0, 0];
         e.set(r[0], r[1], r[2]);

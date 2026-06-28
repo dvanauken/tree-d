@@ -8,9 +8,9 @@
 import * as THREE from '../../vendor/three.module.js';
 import { OrbitController } from './OrbitController.js';
 import { buildWoodGeometry, buildLeafMesh } from './treeGeometry.js';
-import { makeBarkTexture, makeLeafTexture, makeGrassTexture, makeSkyTexture } from './textures.js';
+import { makeLeafTexture, makeSkyTexture } from './textures.js';
 
-const HAZE = 0xcde4f2;
+const GROUND = 0x5f7351;
 
 export class SceneView {
     constructor(container) {
@@ -30,15 +30,10 @@ export class SceneView {
         cv.style.touchAction = 'none';
         container.appendChild(cv);
 
-        this.tex = {
-            bark: makeBarkTexture(),
-            leaf: makeLeafTexture(),
-            grass: makeGrassTexture(),
-        };
+        this.tex = { leaf: makeLeafTexture() };
 
         this.scene = new THREE.Scene();
         this.scene.background = makeSkyTexture();
-        this.scene.fog = new THREE.Fog(HAZE, 300, 1200);
 
         // Lighting: warm key sun (shadows) + cool sky/ground hemisphere.
         this.scene.add(new THREE.HemisphereLight(0xa9d4ff, 0x4a5f38, 0.6));
@@ -137,10 +132,6 @@ export class SceneView {
         sc.near = size * 0.4;
         sc.far = d * 2.4;
         sc.updateProjectionMatrix();
-
-        // Atmospheric haze tuned to scene scale.
-        this.scene.fog.near = size * 1.6;
-        this.scene.fog.far = size * 7;
     }
 
     fit() {
@@ -162,23 +153,23 @@ export class SceneView {
     _woodMaterial() {
         return new THREE.MeshStandardMaterial({
             color: 0xffffff,
-            map: this.tex.bark,
             vertexColors: true,
-            roughness: 0.92,
+            roughness: 0.9,
             metalness: 0,
             wireframe: this.renderMode === 'mesh',
         });
     }
 
     _addGround() {
-        const mat = new THREE.MeshStandardMaterial({ map: this.tex.grass, roughness: 1, metalness: 0 });
+        const mat = new THREE.MeshStandardMaterial({ color: GROUND, roughness: 1, metalness: 0 });
         const plane = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), mat);
         plane.receiveShadow = true;
         this.scene.add(plane);
 
-        const grid = new THREE.GridHelper(400, 40, 0x2f4a29, 0x33502c);
+        // Subtle reference grid (toggleable), close in tone to the ground.
+        const grid = new THREE.GridHelper(400, 40, 0x4a5b40, 0x4a5b40);
         grid.material.transparent = true;
-        grid.material.opacity = 0.35;
+        grid.material.opacity = 0.15;
         grid.rotation.x = Math.PI / 2;
         grid.position.z = 0.05;
         this.grid = grid;

@@ -1,44 +1,27 @@
-// textures.js - Procedural canvas textures for a more realistic render.
+// textures.js - The few procedural textures the scene still needs.
 //
-// Generated at runtime (no asset files) but high enough fidelity to lift the
-// scene out of "flat shaded" territory: streaky bark, a veined leaf cutout, a
-// blade-flecked grass tile, and a hazy sky gradient.
+// Per project direction the wood and ground are plain-shaded (no made-up
+// surface textures). What remains: a soft sky gradient backdrop and a single
+// leaf-shaped alpha cutout used for the (optional) instanced foliage cards.
 
 import * as THREE from '../../vendor/three.module.js';
 
-// Light-key bark detail: multiplies the per-order vertex colour, so it adds
-// streaks/grain without shifting the base brown.
-export function makeBarkTexture() {
-    const s = 256;
-    const c = canvas(s, s);
+// A calm, low-saturation sky gradient.
+export function makeSkyTexture() {
+    const c = canvas(4, 512);
     const x = c.getContext('2d');
-    x.fillStyle = '#cdc6ba';
-    x.fillRect(0, 0, s, s);
-
-    for (let i = 0; i < 220; i++) {
-        const px = Math.random() * s;
-        const w = 1 + Math.random() * 3.5;
-        const a = 0.08 + Math.random() * 0.30;
-        const sh = 60 + Math.random() * 90;
-        x.strokeStyle = `rgba(${sh * 0.5 | 0},${sh * 0.42 | 0},${sh * 0.34 | 0},${a})`;
-        x.lineWidth = w;
-        x.beginPath();
-        x.moveTo(px, 0);
-        let y = 0;
-        while (y < s) { y += 6 + Math.random() * 18; x.lineTo(px + (Math.random() * 5 - 2.5), y); }
-        x.stroke();
-    }
-    speckle(x, s, 26);
-
+    const g = x.createLinearGradient(0, 0, 0, 512);
+    g.addColorStop(0.0, '#aac3da');
+    g.addColorStop(0.6, '#cdddea');
+    g.addColorStop(1.0, '#e9eef1');
+    x.fillStyle = g;
+    x.fillRect(0, 0, 4, 512);
     const t = new THREE.CanvasTexture(c);
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.encoding = THREE.sRGBEncoding;
-    t.anisotropy = 4;
     return t;
 }
 
-// A single leaf, green with veins, transparent background — used as an
-// alpha-cut card.
+// A single leaf, green with veins, transparent background.
 export function makeLeafTexture() {
     const s = 128;
     const c = canvas(s, s);
@@ -79,56 +62,9 @@ export function makeLeafTexture() {
     return t;
 }
 
-export function makeGrassTexture() {
-    const s = 256;
-    const c = canvas(s, s);
-    const x = c.getContext('2d');
-    x.fillStyle = '#43603a';
-    x.fillRect(0, 0, s, s);
-    for (let i = 0; i < 9000; i++) {
-        const px = Math.random() * s;
-        const py = Math.random() * s;
-        const g = 55 + Math.random() * 80;
-        x.fillStyle = `rgba(${g * 0.45 | 0},${g | 0},${g * 0.4 | 0},0.22)`;
-        x.fillRect(px, py, 1, 2 + Math.random() * 4);
-    }
-    const t = new THREE.CanvasTexture(c);
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.encoding = THREE.sRGBEncoding;
-    t.repeat.set(60, 60);
-    t.anisotropy = 4;
-    return t;
-}
-
-export function makeSkyTexture() {
-    const c = canvas(4, 512);
-    const x = c.getContext('2d');
-    const g = x.createLinearGradient(0, 0, 0, 512);
-    g.addColorStop(0.0, '#3f78c0');
-    g.addColorStop(0.55, '#83b4e2');
-    g.addColorStop(1.0, '#d8ecf6');
-    x.fillStyle = g;
-    x.fillRect(0, 0, 4, 512);
-    const t = new THREE.CanvasTexture(c);
-    t.encoding = THREE.sRGBEncoding;
-    return t;
-}
-
 function canvas(w, h) {
     const c = document.createElement('canvas');
     c.width = w;
     c.height = h;
     return c;
-}
-
-function speckle(x, s, amp) {
-    const img = x.getImageData(0, 0, s, s);
-    const d = img.data;
-    for (let i = 0; i < d.length; i += 4) {
-        const n = (Math.random() * 2 - 1) * amp;
-        d[i] += n;
-        d[i + 1] += n;
-        d[i + 2] += n;
-    }
-    x.putImageData(img, 0, 0);
 }
