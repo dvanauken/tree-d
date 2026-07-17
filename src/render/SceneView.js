@@ -172,7 +172,8 @@ export class SceneView {
                 && model.profile.surface.leaf.sheen) ?? 0.3,
         });
         if (this.leafMesh) {
-            this.leafMesh.visible = this.showLeaves;
+            // Arch view always hides foliage, including across rebuilds.
+            this.leafMesh.visible = this.showLeaves && !this.archView;
             this.leafMesh.castShadow = true;   // canopy contributes to the soft shadow
             this.leafMesh.material.envMapIntensity = LIGHT.envIntensity * 0.8;
             this.treeGroup.add(this.leafMesh);
@@ -312,7 +313,7 @@ export class SceneView {
         if (this.wood) this.wood.material.wireframe = mode === 'mesh';
         this.requestRender();
     }
-    setShowLeaves(on) { this.showLeaves = on; if (this.leafMesh) this.leafMesh.visible = on; this.requestRender(); }
+    setShowLeaves(on) { this.showLeaves = on; if (this.leafMesh) this.leafMesh.visible = on && !this.archView; this.requestRender(); }
     setShowGrid(on) { this.showGrid = on; if (this.grid) this.grid.visible = on; this.requestRender(); }
     setShowFigure(on) { this.showFigure = on; this.figure.visible = on; this.requestRender(); }
 
@@ -329,6 +330,8 @@ export class SceneView {
                 buildWoodGeometry(this._lastModel.skeleton, this._woodSurface, { colorMode: on ? 'zone' : 'bark' }),
                 on ? this._archMaterial() : this._woodMaterial(),
             );
+            this.wood.castShadow = true;
+            this.wood.receiveShadow = true;    // keep parity with setModel
             this.treeGroup.add(this.wood);
         }
         if (this.leafMesh) this.leafMesh.visible = on ? false : this.showLeaves;

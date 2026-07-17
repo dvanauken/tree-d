@@ -122,7 +122,6 @@ export function buildTreeModel(speciesKey, options = {}) {
     const leaves = buildFoliage(skeleton, rng, {
         leafSize,
         leavesPerNode: species.leavesPerNode,
-        placement: species.crown?.placement ?? 'outer-shell',
         crownDensity: species.crown?.density,
         maxLeaves: species.maxLeaves ?? 14000,
     });

@@ -79,9 +79,14 @@ export function analyzeArchitecture(skeleton) {
         `Scaffold count = ${zones.Scaffold.count} (want 3-10 dominant limbs)`);
 
     // The agent's headline: a scaffold should ESTABLISH then hand off - not run on
-    // as one leader chain. Deep leader chains = the "snake".
-    add('scaffold-hands-off', maxLeaderDepth <= 3,
-        `max continuation depth = ${maxLeaderDepth} (want <=3; higher means a limb runs on as one snake)`);
+    // as one leader chain. Deep leader chains = the "snake". Only checked when
+    // the grower actually instruments leaderDepth: buildSaneHero reports 0
+    // everywhere, and a pass that cannot fail is worse than no check at all.
+    const depthInstrumented = paths.some((p) => (p.leaderDepth || 0) > 0);
+    if (depthInstrumented) {
+        add('scaffold-hands-off', maxLeaderDepth <= 3,
+            `max continuation depth = ${maxLeaderDepth} (want <=3; higher means a limb runs on as one snake)`);
+    }
 
     // Radius hierarchy must strictly decrease Trunk > Scaffold > ... (no collapse).
     const rseq = ZONES.map((n) => zones[n].avgBaseRadius);
@@ -117,6 +122,12 @@ export function analyzeArchitecture(skeleton) {
         // GOLD TREE (Phase 1): mortality must be ~0 - every branch survives, clean.
         add('gold-no-mortality', mortRate < 0.03,
             `gold tree: lost ${lost}/${attempted} (${round(100 * mortRate, 1)}%; want ~0, character=${character})`);
+    } else if (m.attempted === 0) {
+        // Character was requested but the grower attempted nothing: the active
+        // grower has no mortality/pruning mechanics. Name that loudly instead
+        // of failing a rate check that could never pass.
+        add('mortality-instrumented', false,
+            `character=${character} but the grower reports 0 attempted branches - mortality/pruning not implemented in the active grower`);
     } else {
         add('mortality-present', mortRate >= 0.2,
             `lost ${lost}/${attempted} attempted (${round(100 * mortRate, 1)}%: pruned ${m.pruned}, died ${m.died}; want >=20%)`);

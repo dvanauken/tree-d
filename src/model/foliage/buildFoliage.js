@@ -1,15 +1,17 @@
-// buildFoliage.js - Pipeline stage 6: Foliage Builder (outer-shell canopy).
+// buildFoliage.js - Pipeline stage 6: Foliage Builder (dome-shell canopy).
 //
 // Live oaks read as a dense evergreen DOME whose leaves live on the OUTER SHELL
-// of the crown: small glossy ellipses packed onto the distal twigs, forming
-// lobed masses that self-shadow, while the heavy inner scaffold limbs stay bare
-// and visible. We therefore do NOT scatter leaves evenly along every branch.
-// Instead we:
-//   1. Find the crown's geometric centre + radius from the skeleton bounds.
-//   2. Take the OUTER twig spans (the distal half of every twig / fine branch).
-//   3. Grow clustered "sprays" of leaves there, biased OUTWARD along the radial
-//      from the crown centre, so foliage hugs the canopy surface.
-//   4. Skip clusters that fall deep inside the crown (keeps the interior open).
+// of the crown, while the heavy inner scaffold limbs stay bare and visible.
+// Leafing only the actual twig tips proved too sparse - the crown stayed
+// see-through - so instead:
+//   1. Derive the crown centre + anisotropic radii from the skeleton bounds.
+//   2. Sample cluster centres over that dome ellipsoid (upper surface plus a
+//      drooping skirt), with lumpy radii so the canopy billows.
+//   3. Pull each cluster toward the nearest real branch so foliage hangs on
+//      the tree rather than floating on a perfect shell.
+//   4. Grow a spray of leaf cards around each cluster centre, facing outward.
+// (The skeleton still tags distal `shellAnchor` nodes and returns a `crown`
+// summary in case twig-anchored placement is revisited; unused here.)
 //
 // Output: array of leaf records - pure data:
 //   { position:[x,y,z], size, tint, rot:[rx,ry,rz], normal:[x,y,z], shell }
@@ -17,7 +19,7 @@
 // out and to drive backlit translucency). `position/size/tint/rot` preserve the
 // original contract so older consumers keep working.
 
-import { add, sub, scale, cross, len, normalize, perp, dot, clamp } from '../vec3.js';
+import { add, scale, cross, len, normalize, perp, clamp } from '../vec3.js';
 
 const ORDER_RANK = { trunk: 0, primary: 1, secondary: 2, tertiary: 3, twig: 4 };
 const UP = [0, 0, 1];
@@ -26,7 +28,6 @@ export function buildFoliage(skeleton, rng, opts = {}) {
     const leafSize = opts.leafSize ?? 1.05;     // feet (cluster card scale)
     const density = opts.leavesPerNode ?? 3;    // leaves per anchor (x cluster)
     const maxLeaves = opts.maxLeaves ?? 14000;
-    const placement = opts.placement ?? 'outer-shell';
 
     // Finest order actually present (twigs for broadleaf).
     let finest = 0;
@@ -162,22 +163,4 @@ function shellFrame(nOut) {
     if (len(side) < 1e-4) side = perp(nOut);
     side = normalize(side);
     return { side, up: normalize(cross(nOut, side)) };
-}
-
-function tangentAt(pts, i) {
-    if (i <= 0) return normalize(sub(pts[1], pts[0]));
-    if (i >= pts.length - 1) return normalize(sub(pts[i], pts[i - 1]));
-    return normalize(sub(pts[i + 1], pts[i - 1]));
-}
-
-// Build a stable frame whose "up" leans toward the outward canopy normal, so
-// leaf clusters open toward the sky/surface rather than along the twig.
-function leafFrame(tangent, outward) {
-    let up = sub(outward, scale(tangent, dot(outward, tangent)));
-    if (len(up) < 1e-4) {
-        up = sub(UP, scale(tangent, dot(UP, tangent)));
-        if (len(up) < 1e-4) up = perp(tangent);
-    }
-    up = normalize(up);
-    return { up, side: normalize(cross(up, tangent)) };
 }

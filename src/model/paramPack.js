@@ -37,31 +37,18 @@ function resolveHero(s) {
         // Clear bole height before the trunk divides into scaffold limbs.
         trunkHeight: s.trunk.clearLength,
         trunkLean: s.trunk.lean,
-        trunkFlare: s.trunk.flare,
         trunkFluting: s.trunk.fluting,
         trunkSegments: 5,
-        dividesInto: s.trunk.dividesInto,        // [3,4] heavy leaders off the bole
+        dividesInto: s.trunk.dividesInto,        // [2,3] heavy leaders off the bole
 
         // --- Primary scaffold limbs ----------------------------------------
-        scaffoldCount: s.scaffold.count,                 // [5,7]
-        takeoffAngleDeg: s.scaffold.takeoffAngle,        // [12,30] low take-off
+        scaffoldCount: s.scaffold.count,                 // [4,6]
         basalRadiusFraction: s.scaffold.basalRadiusFraction, // of divide radius
-        taperRetention: s.scaffold.taperRetention,       // slow-taper massive limb
         scaffoldLengthFraction: s.scaffold.lengthFraction,
-        dip: s.scaffold.dipAndRise.dip,                  // sweep down...
-        rise: s.scaffold.dipAndRise.rise,                // ...then arch up
-        sinuosity: s.scaffold.sinuosity,                 // low-freq wander
-        crossOver: s.scaffold.crossOver,                 // allow limbs to cross
 
         // Overall reach: spread is the diameter, so a limb reaches ~half of it.
         spread: s.hero.spread,
         height: s.hero.height,
-        clearance: s.hero.clearance,
-
-        // --- Apical dominance ----------------------------------------------
-        dominanceStrength: s.dominance.strength,
-        leaderRadiusShare: s.dominance.leaderRadiusShare,
-        leaderLengthShare: s.dominance.leaderLengthShare,
 
         // --- Per-order branching character (secondary/tertiary/twig) -------
         // Indexed by parent order: a primary(1) spawns secondaries with the
@@ -71,19 +58,37 @@ function resolveHero(s) {
             2: ruleFor(s.branching, 'tertiary'),
             3: ruleFor(s.branching, 'twig'),
         },
-        maxOrder: Math.min(4, s.maxOrderCap ?? 4), // trunk(0) -> primary(1) -> secondary(2) -> tertiary(3) -> twig(4)
 
-        // PHASE 2 (character) effects, scaled by the gold->aged amount. At
-        // character 0 these are all OFF: every branch survives, no asymmetry -
-        // the clean Gold Tree. They ramp up to add competition/death/lean.
-        characterAmount: char,
-        pruneFrac: 0.34 * char,
-        deathFrac: 0.13 * char,
-        dirBiasAmount: char,        // crown lean / sparse quadrant (0 = balanced)
+        characterAmount: char,  // 0 = gold tree; gates the Phase-2 fields below
 
         minRadius: 0.02,
 
-        // --- Crown / foliage shell -----------------------------------------
+        // ==== NOT YET CONSUMED BY THE GROWER ================================
+        // Species-contract fields buildSaneHero does not read yet. They are
+        // flattened here so the grower can adopt them one at a time (and so
+        // the architecture invariants can hold it to them) - but tuning them
+        // today is a NO-OP for the hero. Do not wire them to live UI controls
+        // until the grower consumes them.
+        trunkFlare: s.trunk.flare,
+        clearance: s.hero.clearance,
+        takeoffAngleDeg: s.scaffold.takeoffAngle,        // [8,24] low take-off
+        taperRetention: s.scaffold.taperRetention,       // slow-taper massive limb
+        dip: s.scaffold.dipAndRise.dip,                  // sweep down...
+        rise: s.scaffold.dipAndRise.rise,                // ...then arch up
+        sinuosity: s.scaffold.sinuosity,                 // low-freq wander
+        crossOver: s.scaffold.crossOver,                 // allow limbs to cross
+        dominanceStrength: s.dominance.strength,
+        leaderRadiusShare: s.dominance.leaderRadiusShare,
+        leaderLengthShare: s.dominance.leaderLengthShare,
+        maxOrder: Math.min(4, s.maxOrderCap ?? 4), // trunk(0) .. twig(4)
+        // Phase-2 (character) mechanics, scaled by the gold->aged amount. The
+        // active grower implements no pruning/death/lean yet, so these are
+        // inert; the removed simulation grower (git 986dc16) consumed them.
+        pruneFrac: 0.34 * char,
+        deathFrac: 0.13 * char,
+        dirBiasAmount: char,        // crown lean / sparse quadrant (0 = balanced)
+        // Crown/foliage: the foliage builder currently reads the species
+        // profile directly (see TreeModel.buildTreeModel), not these fields.
         crownShape: s.crown.shape,
         leafPlacement: s.crown.placement,        // 'outer-shell'
         crownDensity: s.crown.density,
