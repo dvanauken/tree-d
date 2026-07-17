@@ -8,18 +8,20 @@
 //   2. Dimension fidelity: metadata.height/spread within +/-15% of the
 //      declared hero.height / hero.spread.
 //
-// ENFORCE_DIMENSIONS is false for M1 (record-only, so the baseline lands
-// before the grower is tuned); flip to true in M2 when the shape params are
-// adopted and the constants are tuned against it.
+//   3. Param responsiveness: adopted shape params must actually move the
+//      geometry in the right direction (spot check on `dip`).
 
 import { buildTreeModel } from '../src/model/TreeModel.js';
 import { getSpecies } from '../src/model/species/index.js';
 import { formatArchitecture } from '../src/model/analysis/architecture.js';
+import { resolveParams } from '../src/model/paramPack.js';
+import { buildSkeleton } from '../src/model/skeleton/buildSkeleton.js';
+import { makeRng } from '../src/model/rng.js';
 
 const HERO_KEY = 'liveOak';
 const SEEDS = Array.from({ length: 25 }, (_, i) => i + 1);
 const DIM_TOLERANCE = 0.15;
-const ENFORCE_DIMENSIONS = false; // M1: record-only. Enforce from M2 on.
+const ENFORCE_DIMENSIONS = true; // enforced since M2 (shape params adopted)
 
 const species = getSpecies(HERO_KEY);
 const wantH = species.hero.height;
@@ -52,6 +54,29 @@ for (const seed of SEEDS) {
 console.log(`invariants: ${SEEDS.length - failures >= 0 ? '' : ''}${failures === 0 ? 'all pass' : failures + ' failure(s)'} across ${SEEDS.length} seeds`);
 console.log(`dimensions${ENFORCE_DIMENSIONS ? '' : ' (record-only)'}: worst height dev ${(worst.h * 100).toFixed(1)}% (seed ${worst.hSeed}), `
     + `worst spread dev ${(worst.s * 100).toFixed(1)}% (seed ${worst.sSeed}), tolerance ${DIM_TOLERANCE * 100}%`);
+
+// --- Param responsiveness spot check ---------------------------------------
+// Same seed, dip 0 vs 0.5: a bigger dip must pull the primaries' lowest point
+// DOWN. Bypasses the profile-merge layer by editing the resolved pack directly.
+function minPrimaryZ(P) {
+    const sk = buildSkeleton(P, makeRng(1));
+    let mz = Infinity;
+    for (const p of sk.paths) {
+        if (p.order !== 'primary') continue;
+        for (const id of p.nodeIds) mz = Math.min(mz, sk.nodes[id].position[2]);
+    }
+    return mz;
+}
+const basePack = resolveParams(species, { seed: 1 });
+const zFlat = minPrimaryZ({ ...basePack, dip: 0 });
+const zDipped = minPrimaryZ({ ...basePack, dip: 0.5 });
+if (!(zDipped < zFlat)) {
+    failures++;
+    console.error(`FAIL responsiveness: dip 0.5 min primary z ${zDipped.toFixed(2)} `
+        + `not below dip 0 min primary z ${zFlat.toFixed(2)}`);
+} else {
+    console.log(`responsiveness: dip 0 -> min primary z ${zFlat.toFixed(2)}; dip 0.5 -> ${zDipped.toFixed(2)} (ok)`);
+}
 
 if (failures > 0) {
     console.error(`\nCHECK FAILED (${failures})`);

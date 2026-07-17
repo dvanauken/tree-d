@@ -147,6 +147,7 @@ function buildSaneHero(P, rng) {
     function branch({
         startNode, parentPathId, orderIdx, radial, length, radius0,
         segments, tipRise, sag, sideDrift, tipFactor, termination = 'max-order',
+        takeoffSlope = 0, driftFreq = 1.7, taperExp = 1.18,
     }) {
         const side = sideOf(radial);
         const phase = rng.range(0, TAU);
@@ -158,15 +159,18 @@ function buildSaneHero(P, rng) {
         for (let i = 1; i <= segments; i++) {
             const t = i / segments;
             const s = smooth(t);
-            const drift = sideDrift * Math.sin(phase + t * Math.PI * 1.7) * Math.sin(Math.PI * t);
+            const drift = sideDrift * Math.sin(phase + t * Math.PI * driftFreq) * Math.sin(Math.PI * t);
+            // z profile: leave at the take-off angle (relaxing toward the tip),
+            // rise toward the tip, and sag through mid-span (the dip).
             const z = startNode.position[2]
+                + takeoffSlope * length * t * Math.pow(1 - t, 1.5)
                 + tipRise * s
                 - sag * Math.sin(Math.PI * t) * (1 - 0.25 * t);
             const pos = add(
                 add(startNode.position, scale(radial, length * t)),
                 add(scale(side, drift), [0, 0, clamp(z, 0.08, maxZ) - startNode.position[2]]),
             );
-            const taper = lerp(1, tipFactor, Math.pow(t, 1.18));
+            const taper = lerp(1, tipFactor, Math.pow(t, taperExp));
             const r = Math.max(minTip, radius0 * taper);
             node = addNode(pos, r, orderIdx, 'branch', node.id);
             ids.push(node.id);
@@ -226,21 +230,34 @@ function buildSaneHero(P, rng) {
         // clearly dominates (~70/20/10); the support limbs fill the rest of the
         // arc. Favoured-side limbs also reach further, giving the tree a definite
         // "front" and a dominant sweep - the thing that reads as presence.
+        // The first support limb is a COUNTERWEIGHT roughly opposite the
+        // favoured side: real crowns keep a back-side limb, and it guarantees
+        // the declared spread is met along the dominant axis rather than the
+        // crown collapsing to one side when the azimuth draws cluster.
+        const isCounter = i === majorCount;
         let az;
         if (isMajor) {
             az = favoredAz + rng.range(-0.7, 0.7);
+        } else if (isCounter) {
+            az = favoredAz + Math.PI + rng.range(-0.5, 0.5);
         } else {
             const slot = (i - majorCount) / Math.max(1, primaryCount - majorCount);
             az = baseAz + slot * TAU + rng.range(-0.25, 0.25);
         }
         const radial = [Math.cos(az), Math.sin(az), 0];
         const align = Math.cos(az - favoredAz);       // 1 = favoured, -1 = weak side
-        const reachBias = lerp(0.68, 1.2, (align + 1) / 2);
+        const reachBias = lerp(0.78, 1.2, (align + 1) / 2);
         const startZ = lerp(clearH * 0.72, clearH * 1.02, (i + rng.range(0.15, 0.85)) / primaryCount);
         const start = trunkNodeAt(startZ);
         const length = crownRadius * reachScale * reachBias
-            * (isMajor ? rng.range(0.95, 1.12) : rng.range(0.55, 0.82));
+            * (isMajor ? rng.range(1.0, 1.15)
+                : isCounter ? rng.range(0.72, 0.95)
+                : rng.range(0.55, 0.82));
         const radius0 = Math.min(start.radius * 0.94, divideR * P.basalRadiusFraction * (isMajor ? rng.range(0.9, 1.05) : rng.range(0.5, 0.72)));
+        // Species shape params drive the signature line: low TAKE-OFF angle,
+        // DIP through mid-span, RISE toward the tips, SINUOSITY as low-freq
+        // lateral wander, and TAPER RETENTION holding girth far along the limb.
+        const takeoff = deg(rng.span(P.takeoffAngleDeg));
         const primary = branch({
             startNode: start,
             parentPathId: trunkPath.id,
@@ -249,17 +266,20 @@ function buildSaneHero(P, rng) {
             length,
             radius0,
             segments: 9,
-            tipRise: rng.range(9.0, 18.0) + (isMajor ? 0 : 2.0),
-            sag: rng.range(3.8, 7.2),
-            sideDrift: length * rng.range(0.025, 0.055),
-            tipFactor: isMajor ? 0.34 : 0.27,
+            takeoffSlope: Math.tan(takeoff),
+            tipRise: P.rise * length * 0.45 * rng.range(0.85, 1.15) + (isMajor ? 0 : 2.0),
+            sag: P.dip * length * 0.40 * rng.range(0.85, 1.15),
+            sideDrift: length * P.sinuosity * rng.range(0.05, 0.10),
+            driftFreq: lerp(1.2, 2.2, P.sinuosity),
+            tipFactor: lerp(0.20, 0.42, P.taperRetention) - (isMajor ? 0 : 0.05),
+            taperExp: lerp(0.9, 1.6, P.taperRetention),
             termination: 'hand-off',
         });
         primaries.push(primary);
     }
 
     for (const [pi, primary] of primaries.entries()) {
-        const secondaryCount = rng.spanInt(P.branching[1].count);
+        const secondaryCount = P.maxOrder >= 2 ? rng.spanInt(P.branching[1].count) : 0;
         for (let j = 0; j < secondaryCount; j++) {
             const station = lerp(0.34, 0.78, (j + rng.range(0.25, 0.75)) / secondaryCount);
             const sid = primary.ids[Math.min(primary.ids.length - 1, Math.max(1, Math.round(station * (primary.ids.length - 1))))];
@@ -275,14 +295,17 @@ function buildSaneHero(P, rng) {
                 length,
                 radius0: Math.max(P.minRadius * 2.0, start.radius * rng.range(0.38, 0.54)),
                 segments: 5,
-                tipRise: rng.range(7.0, 16.0),
-                sag: rng.range(0.8, 2.6),
-                sideDrift: length * rng.range(0.03, 0.07),
+                // Secondaries climb to fill the dome; rise/dip scale with the
+                // species params at a gentler, length-independent gain.
+                tipRise: P.rise * rng.range(12.5, 23.5),
+                sag: P.dip * rng.range(3.0, 9.0),
+                sideDrift: length * P.sinuosity * rng.range(0.055, 0.125),
+                driftFreq: lerp(1.2, 2.2, P.sinuosity),
                 tipFactor: 0.28,
                 termination: 'hand-off',
             });
 
-            const tertiaryCount = rng.spanInt(P.branching[2].count);
+            const tertiaryCount = P.maxOrder >= 3 ? rng.spanInt(P.branching[2].count) : 0;
             for (let k = 0; k < tertiaryCount; k++) {
                 const tstation = lerp(0.42, 0.86, (k + rng.range(0.25, 0.75)) / tertiaryCount);
                 const tid = secondary.ids[Math.min(secondary.ids.length - 1, Math.max(1, Math.round(tstation * (secondary.ids.length - 1))))];
@@ -302,12 +325,12 @@ function buildSaneHero(P, rng) {
                     tipFactor: 0.24,
                     termination: 'terminal',
                 });
-                spawnTwigs(tertiary, tradial, rng.spanInt(P.branching[3].count), 0.8);
+                if (P.maxOrder >= 4) spawnTwigs(tertiary, tradial, rng.spanInt(P.branching[3].count), 0.8);
             }
 
-            spawnTwigs(secondary, secondary.radial, 1 + (rng.next() < 0.55 ? 1 : 0), 1.0);
+            if (P.maxOrder >= 4) spawnTwigs(secondary, secondary.radial, 1 + (rng.next() < 0.55 ? 1 : 0), 1.0);
         }
-        spawnTwigs(primary, primary.radial, 2, 1.15);
+        if (P.maxOrder >= 4) spawnTwigs(primary, primary.radial, 2, 1.15);
     }
 
     attachSpines(paths, nodes);

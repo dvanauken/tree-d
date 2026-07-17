@@ -97,6 +97,25 @@ function mergeHeroProfile(base, p) {
     return out;
 }
 
+// Crown spread as the TRUE horizontal diameter (max pairwise XY distance),
+// not the axis-aligned bounding box - an asymmetric crown whose long axis runs
+// diagonally reads up to ~30% narrower on the bbox, which is the wrong number
+// for a site plan. Brute force over node pairs; runs once per build.
+function horizontalDiameter(nodes) {
+    let d2 = 0;
+    for (let i = 0; i < nodes.length; i++) {
+        const a = nodes[i].position;
+        for (let j = i + 1; j < nodes.length; j++) {
+            const b = nodes[j].position;
+            const dx = a[0] - b[0];
+            const dy = a[1] - b[1];
+            const d = dx * dx + dy * dy;
+            if (d > d2) d2 = d;
+        }
+    }
+    return Math.sqrt(d2);
+}
+
 export function buildTreeModel(speciesKey, options = {}) {
     const { ageClass, seed, profile } = options;
     const species = mergeProfile(getSpecies(speciesKey), profile);
@@ -132,7 +151,7 @@ export function buildTreeModel(speciesKey, options = {}) {
         pathCount: skeleton.paths.length,
         leafCount: leaves.length,
         height: b.max[2] - b.min[2],
-        spread: Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1]),
+        spread: horizontalDiameter(skeleton.nodes),
         trunkDBH: params.trunkRadius * 2,
         architecture: analyzeArchitecture(skeleton),
     };

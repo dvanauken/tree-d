@@ -45,6 +45,11 @@ function resolveHero(s) {
         scaffoldCount: s.scaffold.count,                 // [4,6]
         basalRadiusFraction: s.scaffold.basalRadiusFraction, // of divide radius
         scaffoldLengthFraction: s.scaffold.lengthFraction,
+        takeoffAngleDeg: s.scaffold.takeoffAngle,        // [8,24] low take-off
+        taperRetention: s.scaffold.taperRetention,       // slow-taper massive limb
+        dip: s.scaffold.dipAndRise.dip,                  // sweep down...
+        rise: s.scaffold.dipAndRise.rise,                // ...then arch up
+        sinuosity: s.scaffold.sinuosity,                 // low-freq wander
 
         // Overall reach: spread is the diameter, so a limb reaches ~half of it.
         spread: s.hero.spread,
@@ -59,6 +64,8 @@ function resolveHero(s) {
             3: ruleFor(s.branching, 'twig'),
         },
 
+        maxOrder: Math.min(4, s.maxOrderCap ?? 4), // trunk(0) .. twig(4)
+
         characterAmount: char,  // 0 = gold tree; gates the Phase-2 fields below
 
         minRadius: 0.02,
@@ -71,16 +78,10 @@ function resolveHero(s) {
         // until the grower consumes them.
         trunkFlare: s.trunk.flare,
         clearance: s.hero.clearance,
-        takeoffAngleDeg: s.scaffold.takeoffAngle,        // [8,24] low take-off
-        taperRetention: s.scaffold.taperRetention,       // slow-taper massive limb
-        dip: s.scaffold.dipAndRise.dip,                  // sweep down...
-        rise: s.scaffold.dipAndRise.rise,                // ...then arch up
-        sinuosity: s.scaffold.sinuosity,                 // low-freq wander
         crossOver: s.scaffold.crossOver,                 // allow limbs to cross
         dominanceStrength: s.dominance.strength,
         leaderRadiusShare: s.dominance.leaderRadiusShare,
         leaderLengthShare: s.dominance.leaderLengthShare,
-        maxOrder: Math.min(4, s.maxOrderCap ?? 4), // trunk(0) .. twig(4)
         // Phase-2 (character) mechanics, scaled by the gold->aged amount. The
         // active grower implements no pruning/death/lean yet, so these are
         // inert; the removed simulation grower (git 986dc16) consumed them.
