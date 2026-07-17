@@ -1,68 +1,62 @@
-# Live Oak Baseline
+# Live Oak Baseline (sane hero grower)
 
-Checkpoint commit: dd6ab0f Checkpoint UI accessibility and hero viewer
+Baseline for the ONE finished ideal specimen (character 0, no age classes -
+the young/mature/old cases from the earlier baseline predate the hero contract
+and are retired). The hero is judged at fixed reference seeds; each seed is a
+unique tree, and a given (species, seed, overrides) recipe must regenerate the
+identical tree on unchanged code.
 
-Reference cases:
+Reference seeds: 1, 42, 12345 (species UI key: liveOak)
 
-- live-oak-young-seed-1
-- live-oak-mature-seed-1
-- live-oak-old-seed-1
+## Digests
 
-Rendering baseline:
+Regenerate with:  node tools/digest.mjs
+Gate (invariants, 25 seeds):  node tools/check.mjs
 
-- Browser viewport: 1600 x 1000
-- Screenshot target: #scene-host
-- Species UI key: liveOak
-- Seed: 1
-- Projection: perspective
-- Field of view: default 45 degrees
-- Grid: on
-- Figure: on
-- Leaves: off
-- Fit: clicked before capture
+Digests are EXPECTED to change when a grower milestone lands. Refresh this
+file at milestone end and explain the change in the commit message. An
+unexplained digest change is a regression.
 
-Screenshots:
+hero liveOak seed=1 {"nodes":394,"paths":146,"leaves":11280,"posSum":"9101.039826","radSum":"63.360452","leafSum":"409042.647485","height":32.828,"spread":97.303,"firstViolated":null}
+hero liveOak seed=42 {"nodes":480,"paths":178,"leaves":10476,"posSum":"23456.109111","radSum":"79.207719","leafSum":"480412.684651","height":33.12,"spread":92.012,"firstViolated":null}
+hero liveOak seed=12345 {"nodes":447,"paths":167,"leaves":12000,"posSum":"-1582.553263","radSum":"68.993348","leafSum":"138716.249621","height":33.12,"spread":96.488,"firstViolated":null}
+legacy sycamore seed=1 {"nodes":643,"paths":107,"leaves":10320,"posSum":"28300.381297","radSum":"109.597938","leafSum":"436985.043833","height":59.066,"spread":68.699,"firstViolated":null}
+legacy crepeMyrtle seed=1 {"nodes":763,"paths":127,"leaves":11868,"posSum":"10761.759484","radSum":"30.161533","leafSum":"150659.210071","height":20.651,"spread":19.445,"firstViolated":null}
+legacy maple seed=1 {"nodes":763,"paths":127,"leaves":11868,"posSum":"18459.796349","radSum":"67.664496","leafSum":"270398.716626","height":35.983,"spread":38.807,"firstViolated":null}
+legacy shumardOak seed=1 {"nodes":1003,"paths":167,"leaves":12276,"posSum":"34223.062749","radSum":"114.801677","leafSum":"412676.786848","height":47.192,"spread":66.85,"firstViolated":null}
+legacy whiteBirch seed=1 {"nodes":875,"paths":125,"leaves":12012,"posSum":"16934.148928","radSum":"49.914023","leafSum":"245139.967501","height":27.191,"spread":20.859,"firstViolated":null}
+legacy palm seed=1 {"nodes":127,"paths":16,"leaves":10764,"posSum":"1934.680481","radSum":"30.502500","leafSum":"209276.194960","height":29.807,"spread":29.753,"firstViolated":"few-scaffolds"}
 
-- docs/baselines/live-oak-young-seed-1.png
-- docs/baselines/live-oak-mature-seed-1.png
-- docs/baselines/live-oak-old-seed-1.png
+Note: palm legitimately violates few-scaffolds (the invariant set describes a
+decurrent broadleaf; palms have no scaffold limbs). Only the hero is gated.
 
-Model metrics:
+## Architecture (hero seed 1)
 
-| Case | Nodes | Paths | Leaves | Height ft | Spread ft | DBH ft |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| live-oak-young-seed-1 | 419 | 70 | 368 | 23.373 | 36.823 | 1.500 |
-| live-oak-mature-seed-1 | 887 | 148 | 720 | 46.875 | 83.369 | 3.000 |
-| live-oak-old-seed-1 | 887 | 148 | 720 | 53.907 | 95.875 | 3.450 |
+ZONE         count  avgLen  avgDepth maxDepth  baseR  tipR
+Trunk           1       7        0        0      2  1.76
+Scaffold        5   43.89        0        0   1.09  0.33
+Structural     11   13.73        0        0    0.3  0.08
+Framework      29    7.98        0        0   0.07  0.03
+Fine          100    2.28        0        0   0.04  0.02
+Twig            0       0        0        0      0     0
 
-Radius stats, feet:
+termination: open=1  hand-off=16  terminal=29  max-order=100
 
-| Case | Order | Count | Min | P50 | Max |
-| --- | --- | ---: | ---: | ---: | ---: |
-| live-oak-young-seed-1 | trunk | 5 | 0.615 | 0.682 | 0.750 |
-| live-oak-young-seed-1 | primary | 30 | 0.227 | 0.320 | 0.382 |
-| live-oak-young-seed-1 | secondary | 108 | 0.119 | 0.167 | 0.199 |
-| live-oak-young-seed-1 | tertiary | 276 | 0.062 | 0.087 | 0.104 |
-| live-oak-mature-seed-1 | trunk | 5 | 1.230 | 1.365 | 1.500 |
-| live-oak-mature-seed-1 | primary | 30 | 0.454 | 0.639 | 0.763 |
-| live-oak-mature-seed-1 | secondary | 96 | 0.237 | 0.334 | 0.399 |
-| live-oak-mature-seed-1 | tertiary | 216 | 0.124 | 0.175 | 0.208 |
-| live-oak-mature-seed-1 | twig | 540 | 0.065 | 0.091 | 0.109 |
-| live-oak-old-seed-1 | trunk | 5 | 1.414 | 1.570 | 1.725 |
-| live-oak-old-seed-1 | primary | 30 | 0.522 | 0.735 | 0.878 |
-| live-oak-old-seed-1 | secondary | 96 | 0.273 | 0.384 | 0.459 |
-| live-oak-old-seed-1 | tertiary | 216 | 0.142 | 0.201 | 0.240 |
-| live-oak-old-seed-1 | twig | 540 | 0.074 | 0.105 | 0.125 |
+## Dimensions
 
-Regenerate model metrics:
+Declared hero contract: height 36 ft, spread 100 ft, DBH 4.0 ft.
+Recorded across seeds 1..25 (tools/check.mjs, record-only in M1):
+worst height deviation 26.1% (seed 9), worst spread deviation 33.2% (seed 4).
+M2 flips ENFORCE_DIMENSIONS to true and tunes the shape-param mappings until
+every seed is within +/-15%.
 
-```powershell
-node --input-type=module -e "import { buildTreeModel } from './src/model/TreeModel.js'; const ages=['young','mature','old']; const fmt=(x)=>Number(x.toFixed(3)); for (const ageClass of ages) { const m=buildTreeModel('liveOak',{ageClass,seed:1}); console.log(ageClass, m.metadata.nodeCount, m.metadata.pathCount, fmt(m.metadata.height), fmt(m.metadata.spread), fmt(m.metadata.trunkDBH)); }"
-```
+## Rendering baseline (for screenshots, unchanged procedure)
 
-Phase notes:
+- Browser viewport: 1600 x 1000, screenshot target: #scene-host
+- Projection: perspective, FOV 45, Grid on, Figure on, Leaves off, Fit clicked
+- Arch view on for structure review (zone colours + invariant report)
 
-- Phase 0 baseline is established for one hero Live Oak seed across age classes.
-- Phase 1 taper is currently acceptable enough to proceed: mature twigs are not pinned to the 0.030 ft minimum radius.
-- Phase 2 should address the visible segmented branch paths.
-- Phase 3 should address visible fork intersections and branch collar transitions.
+## Milestone log
+
+- M1 (this file): harness in-repo (tools/digest.mjs, tools/check.mjs),
+  baseline refreshed for the sane grower. Known deviations recorded above.

@@ -113,24 +113,28 @@ export function analyzeArchitecture(skeleton) {
     // Mortality should be visible. The dominant loss is PRUNING (branches lost
     // to competition before they ever grow); death/breakage is on top. Rate is
     // measured against everything that was ATTEMPTED, not against survivors.
+    // Only judged when the skeleton carries a mortality ledger at all: legacy
+    // growers are uninstrumented by design and must not be flagged for it.
     const m = skeleton.mortality || { attempted: 0, pruned: 0, died: 0 };
     const lost = m.pruned + m.died;
     const attempted = Math.max(1, m.attempted + m.died);
     const mortRate = lost / attempted;
     const character = skeleton.character ?? 1;
-    if (character < 0.05) {
-        // GOLD TREE (Phase 1): mortality must be ~0 - every branch survives, clean.
-        add('gold-no-mortality', mortRate < 0.03,
-            `gold tree: lost ${lost}/${attempted} (${round(100 * mortRate, 1)}%; want ~0, character=${character})`);
-    } else if (m.attempted === 0) {
-        // Character was requested but the grower attempted nothing: the active
-        // grower has no mortality/pruning mechanics. Name that loudly instead
-        // of failing a rate check that could never pass.
-        add('mortality-instrumented', false,
-            `character=${character} but the grower reports 0 attempted branches - mortality/pruning not implemented in the active grower`);
-    } else {
-        add('mortality-present', mortRate >= 0.2,
-            `lost ${lost}/${attempted} attempted (${round(100 * mortRate, 1)}%: pruned ${m.pruned}, died ${m.died}; want >=20%)`);
+    if (skeleton.mortality) {
+        if (character < 0.05) {
+            // GOLD TREE (Phase 1): mortality must be ~0 - every branch survives.
+            add('gold-no-mortality', mortRate < 0.03,
+                `gold tree: lost ${lost}/${attempted} (${round(100 * mortRate, 1)}%; want ~0, character=${character})`);
+        } else if (m.attempted === 0) {
+            // Character was requested but the grower attempted nothing: the
+            // active grower has no mortality/pruning mechanics. Name that
+            // loudly instead of failing a rate check that could never pass.
+            add('mortality-instrumented', false,
+                `character=${character} but the grower reports 0 attempted branches - mortality/pruning not implemented in the active grower`);
+        } else {
+            add('mortality-present', mortRate >= 0.2,
+                `lost ${lost}/${attempted} attempted (${round(100 * mortRate, 1)}%: pruned ${m.pruned}, died ${m.died}; want >=20%)`);
+        }
     }
     const total = paths.length;
 
