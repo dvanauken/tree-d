@@ -30,3 +30,4 @@ Thumbs.db
 # Misc
 *.tmp
 .cache/
+tools/.serve.pid
