@@ -13,6 +13,7 @@ import { SceneView } from './src/render/SceneView.js';
 import { ControlPanel } from './src/ui/ControlPanel.js';
 import { SavedTrees } from './src/ui/SavedTrees.js';
 import { saveTree, loadTree } from './src/store/treeStore.js';
+import { ZONES, ZONE_COLOR, formatArchitecture } from './src/model/analysis/architecture.js';
 
 document.addEventListener('DOMContentLoaded', () => {
     const $ = (id) => document.getElementById(id);
@@ -63,6 +64,20 @@ document.addEventListener('DOMContentLoaded', () => {
         scene.setModel(currentModel, needRefit);
         needRefit = false;
         showStatus(currentModel);
+        if (scene.archView) renderArchPanel(currentModel.metadata.architecture);
+    }
+
+    // --- Architecture View report panel ------------------------------------
+    const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    function renderArchPanel(report) {
+        const panel = $('arch-panel');
+        if (!report) { panel.hidden = true; panel.innerHTML = ''; return; }
+        const legend = ZONES.map((z) => {
+            const hex = '#' + ZONE_COLOR[z].toString(16).padStart(6, '0');
+            return `<span class="arch-chip"><span class="arch-sw" style="background:${hex}"></span>${z} ${report.zones[z].count}</span>`;
+        }).join('');
+        panel.innerHTML = `<div class="arch-legend">${legend}</div>${escapeHtml(formatArchitecture(report))}`;
+        panel.hidden = false;
     }
 
     function loadSpeciesIntoPanel() {
@@ -178,6 +193,14 @@ document.addEventListener('DOMContentLoaded', () => {
             fn(on);
         });
     }
+    toggle('btn-arch', (on) => {
+        const report = scene.setArchView(on);
+        renderArchPanel(on ? report : null);
+        // arch view hides leaves; reflect that on the Leaves button
+        const lb = $('btn-leaves');
+        lb.classList.toggle('active', !on && scene.showLeaves);
+        lb.setAttribute('aria-pressed', (!on && scene.showLeaves) ? 'true' : 'false');
+    });
     toggle('btn-leaves', (on) => scene.setShowLeaves(on));
     toggle('btn-grid',   (on) => scene.setShowGrid(on));
     toggle('btn-figure', (on) => scene.setShowFigure(on));

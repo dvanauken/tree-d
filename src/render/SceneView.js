@@ -2,13 +2,37 @@
 //
 // Renderer adapter (pipeline stage 7). Owns the WebGL scene, lighting, ground,
 // sky, dual cameras (perspective / orthographic), orbit control, and a human
-// scale figure. Aims for a serious outdoor render: filmic tone mapping, sRGB
-// output, soft sun shadows, textured bark + grass, and atmospheric fog.
+// scale figure. Aims for a photoreal outdoor render with NO image assets:
+// filmic tone mapping, sRGB output, a PROCEDURAL PMREM environment map for
+// image-based lighting, a soft VSM sun shadow plus a soft radial contact-shadow
+// decal, procedurally furrowed bark maps, glossy leaf cards, and fog.
 
 import * as THREE from '../../vendor/three.module.js';
 import { OrbitController } from './OrbitController.js';
 import { buildWoodGeometry, buildLeafMesh } from './treeGeometry.js';
-import { makeLeafTexture, makeSkyTexture, makeGroundTexture } from './textures.js';
+import {
+    makeLeafTexture, makeSkyTexture, makeGroundTexture,
+    makeBarkTextures, makeEnvScene, makeContactShadowTexture,
+} from './textures.js';
+
+// ---- Dial these for the look ----------------------------------------------
+const LIGHT = {
+    sunColor: 0xfff2dc, sunIntensity: 2.7,        // warm key
+    skyColor: 0xbcd6ff, groundColor: 0x55633f, hemiIntensity: 0.85, // sky fill
+    fillColor: 0xd8e6ff, fillIntensity: 0.35,     // cool bounce
+    exposure: 1.0,
+    envIntensity: 0.9,    // how much the procedural env map drives ambient/spec
+};
+const SHADOW = {
+    useSunShadow: false,  // sun cast-shadow OFF (user rejected it); grounding is the soft contact decal only
+    blurRadius: 6,        // VSM blur (higher = softer)
+    mapSize: 2048,
+    contactStrength: 0.42,// the SOFT radial blob under the crown (main grounding)
+    contactScale: 1.15,   // blob radius as a fraction of crown spread
+};
+// Default bark surface (hero spec). Generated once; reused across rebuilds.
+const DEFAULT_BARK = { color: 0x3a2a1c, roughness: 0.96, fissure: 0.4 };
+// ---------------------------------------------------------------------------
 
 export class SceneView {
     constructor(container) {
@@ -18,7 +42,10 @@ export class SceneView {
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
         this.renderer.outputEncoding = THREE.sRGBEncoding;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.08;
+        this.renderer.toneMappingExposure = LIGHT.exposure;
+        this.renderer.physicallyCorrectLights = true;   // sane intensity falloff
+        this.renderer.shadowMap.enabled = false;           // no hard cast shadow on the grass
+        this.renderer.shadowMap.type = THREE.VSMShadowMap; // (type kept; unused while disabled)
         const cv = this.renderer.domElement;
         cv.style.display = 'block';
         cv.style.width = '100%';
@@ -32,20 +59,44 @@ export class SceneView {
         );
         container.appendChild(cv);
 
+        // Procedural textures. Bark albedo/normal/roughness are generated once
+        // (deeply furrowed, matte live-oak) and shared across every limb.
+        this.barkBark = { ...DEFAULT_BARK };
+        this.barkTex = makeBarkTextures(this.barkBark);
         this.tex = { leaf: makeLeafTexture() };
 
         this.scene = new THREE.Scene();
         this.scene.background = makeSkyTexture();
-        // Fog color matches sky horizon so the far ground fades naturally.
-        this.scene.fog = new THREE.Fog(0xc8dff5, 300, 1800);
+        // Fog colour matches the sky horizon so far ground fades into haze.
+        this.scene.fog = new THREE.Fog(0xc8dff5, 350, 2200);
 
-        // Lighting: warm key sun (shadows) + cool sky/ground hemisphere.
-        this.scene.add(new THREE.HemisphereLight(0xa9d4ff, 0x7a9a60, 1.4));
-        this.sun = new THREE.DirectionalLight(0xfff3e0, 0.9);
+        // Sun direction (Z-up world). Warm key from upper front-right.
+        this._sunDir = new THREE.Vector3(0.55, 0.35, 1.0).normalize();
+
+        // Procedural image-based lighting via PMREM (no HDRI file).
+        this._buildEnvironment();
+
+        // Key sun: warm directional, soft shadow.
+        this.sun = new THREE.DirectionalLight(LIGHT.sunColor, LIGHT.sunIntensity);
+        if (SHADOW.useSunShadow) {
+            this.sun.castShadow = true;
+            this.sun.shadow.mapSize.set(SHADOW.mapSize, SHADOW.mapSize);
+            this.sun.shadow.radius = SHADOW.blurRadius;     // VSM softness
+            this.sun.shadow.bias = -0.0004;
+            const cam = this.sun.shadow.camera;             // ortho frustum
+            cam.near = 1; cam.far = 1200;
+            cam.left = -120; cam.right = 120; cam.top = 120; cam.bottom = -120;
+        }
         this.scene.add(this.sun);
         this.scene.add(this.sun.target);
-        const fill = new THREE.DirectionalLight(0xdfe8ff, 0.45);
-        fill.position.set(-80, -60, 60);
+
+        // Sky fill: cool hemisphere (sky over ground bounce).
+        this.scene.add(new THREE.HemisphereLight(
+            LIGHT.skyColor, LIGHT.groundColor, LIGHT.hemiIntensity));
+
+        // Cool fill from the shadow side, no shadow.
+        const fill = new THREE.DirectionalLight(LIGHT.fillColor, LIGHT.fillIntensity);
+        fill.position.set(-80, -60, 70);
         this.scene.add(fill);
 
         this._addGround();
@@ -72,6 +123,7 @@ export class SceneView {
         this.showLeaves = false;
         this.showGrid = true;
         this.showFigure = true;
+        this.archView = false;   // Architecture View: colour wood by zone
 
         this.figure = makeFigure();
         this.scene.add(this.figure);
@@ -95,12 +147,34 @@ export class SceneView {
         this._lastModel = model;
         this._clearTree();
 
-        this.wood = new THREE.Mesh(buildWoodGeometry(model.skeleton), this._woodMaterial());
+        // Thread the species surface params into the geometry so the carved
+        // fissures/fluting match the procedural bark maps. trunkFluting lives at
+        // profile.trunk.fluting; flatten it onto the surface object the geometry
+        // builder reads.
+        const profSurface = (model.profile && model.profile.surface) || null;
+        const surface = profSurface
+            ? { ...profSurface, trunkFluting: model.profile.trunk && model.profile.trunk.fluting }
+            : null;
+        this._woodSurface = surface;
+
+        this.wood = new THREE.Mesh(
+            buildWoodGeometry(model.skeleton, surface, { colorMode: this.archView ? 'zone' : 'bark' }),
+            this.archView ? this._archMaterial() : this._woodMaterial(),
+        );
+        this.wood.castShadow = true;
+        this.wood.receiveShadow = true;        // self-shadowing on big limbs
         this.treeGroup.add(this.wood);
 
-        this.leafMesh = buildLeafMesh(model.leaves, this.tex.leaf);
+        this.leafMesh = buildLeafMesh(model.leaves, this.tex.leaf, {
+            colorRange: (model.profile && model.profile.crown && model.profile.crown.colorRange)
+                || [0x2f4a1e, 0x6a8c3a],
+            sheen: (model.profile && model.profile.surface && model.profile.surface.leaf
+                && model.profile.surface.leaf.sheen) ?? 0.3,
+        });
         if (this.leafMesh) {
             this.leafMesh.visible = this.showLeaves;
+            this.leafMesh.castShadow = true;   // canopy contributes to the soft shadow
+            this.leafMesh.material.envMapIntensity = LIGHT.envIntensity * 0.8;
             this.treeGroup.add(this.leafMesh);
         }
 
@@ -139,9 +213,23 @@ export class SceneView {
             },
         );
 
+        // Sun sits along the fixed warm direction, scaled to the scene, aiming
+        // at the tree centre so the soft shadow lands under the crown.
         const d = size * 2.2;
-        this.sun.position.set(cx + d * 0.55, cy + d * 0.35, cz + d);
-        this.sun.target.position.set(cx, cy, cz);
+        this.sun.position.set(
+            cx + this._sunDir.x * d,
+            cy + this._sunDir.y * d,
+            cz + this._sunDir.z * d,
+        );
+        this.sun.target.position.set(cx, cy, 0);
+
+        // Soft contact shadow scaled to the crown spread, centred under it.
+        if (this.contactShadow) {
+            const spread = Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1], 1);
+            const r = spread * SHADOW.contactScale;
+            this.contactShadow.scale.set(r, r, 1);
+            this.contactShadow.position.set(cx, cy, 0.03);
+        }
     }
 
     fit() {
@@ -167,7 +255,6 @@ export class SceneView {
         const tanHalf = Math.tan(THREE.MathUtils.degToRad(this.orthoScaleFov) / 2);
         const aspect  = Math.max(this._w / this._h, 0.1);
 
-        // Fit a 2D rectangle (screenW × screenH in world units) into the ortho frame.
         const rectFit = (w, h, pad = 0.55) => {
             const rH = (h * pad) / tanHalf;
             const rW = (w * pad) / (aspect * tanHalf);
@@ -193,7 +280,6 @@ export class SceneView {
                 const b = this._lastModel.skeleton.bounds;
                 const treeW = b.max[0] - b.min[0];
                 const treeH = b.max[2] - b.min[2];
-                // Center the view on the tree; base of tree sits near the bottom.
                 ctrl.target.set(
                     (b.min[0] + b.max[0]) / 2,
                     (b.min[1] + b.max[1]) / 2,
@@ -202,7 +288,7 @@ export class SceneView {
                 ctrl.setRadius(rectFit(treeW, treeH));
             }
         } else if (preset === 'eye') {
-            ctrl.elevation = 0.08;              // ~5° — ground stays in frame
+            ctrl.elevation = 0.08;              // ~5 deg - ground stays in frame
             ctrl.target.z = 6;                  // eye height in feet
             this.projection = 'perspective';
             if (this._lastModel) {
@@ -230,26 +316,91 @@ export class SceneView {
     setShowGrid(on) { this.showGrid = on; if (this.grid) this.grid.visible = on; this.requestRender(); }
     setShowFigure(on) { this.showFigure = on; this.figure.visible = on; this.requestRender(); }
 
+    // Architecture View: recolour the wood by architectural zone (flat, unlit)
+    // and hide the leaves so the structure reads. Returns the model's report.
+    setArchView(on) {
+        this.archView = on;
+        if (this.wood && this._lastModel) {
+            const old = this.wood;
+            this.treeGroup.remove(old);
+            old.geometry.dispose();
+            old.material.dispose();
+            this.wood = new THREE.Mesh(
+                buildWoodGeometry(this._lastModel.skeleton, this._woodSurface, { colorMode: on ? 'zone' : 'bark' }),
+                on ? this._archMaterial() : this._woodMaterial(),
+            );
+            this.treeGroup.add(this.wood);
+        }
+        if (this.leafMesh) this.leafMesh.visible = on ? false : this.showLeaves;
+        this.requestRender();
+        return this._lastModel ? this._lastModel.metadata.architecture : null;
+    }
+
+    _archMaterial() {
+        return new THREE.MeshBasicMaterial({ vertexColors: true }); // flat, unlit zone colours
+    }
+
+    _buildEnvironment() {
+        const pmrem = new THREE.PMREMGenerator(this.renderer);
+        pmrem.compileEquirectangularShader(); // safe warm-up for fromScene
+        const envScene = makeEnvScene(THREE, this._sunDir);
+        const rt = pmrem.fromScene(envScene, 0.04, 0.1, 1000); // far must exceed the 500-radius env dome (default far=100 clipped it -> dead IBL)
+        this.scene.environment = rt.texture;        // drives Standard material IBL
+        // (keep scene.background as the crisp sky gradient, not the PMREM blur)
+        envScene.traverse((o) => {
+            if (o.geometry) o.geometry.dispose();
+            if (o.material) o.material.dispose();
+        });
+        pmrem.dispose();
+    }
+
     _woodMaterial() {
-        return new THREE.MeshStandardMaterial({
-            color: 0xffffff,
-            vertexColors: true,
-            roughness: 0.9,
-            metalness: 0,
+        const b = this.barkBark;
+        const m = new THREE.MeshStandardMaterial({
+            color: 0xffffff,            // let vertex colour + map define hue
+            vertexColors: true,         // mottling / lichen multiply over the map
+            map: this.barkTex.map,
+            normalMap: this.barkTex.normalMap,
+            roughnessMap: this.barkTex.roughnessMap,
+            normalScale: new THREE.Vector2(1.0, 1.0),
+            roughness: b.roughness,     // matte bark (0.96)
+            metalness: 0,               // wood is dielectric
             side: THREE.DoubleSide,
             wireframe: this.renderMode === 'mesh',
         });
+        m.envMapIntensity = LIGHT.envIntensity;
+        return m; // no clearcoat: live-oak bark is dry and matte
     }
 
     _addGround() {
-        const mat = new THREE.MeshStandardMaterial({ map: makeGroundTexture(), roughness: 1, metalness: 0 });
+        const mat = new THREE.MeshStandardMaterial({
+            map: makeGroundTexture(),
+            roughness: 1, metalness: 0,
+        });
         const plane = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), mat);
+        plane.receiveShadow = true;          // catches the soft sun shadow
+        plane.position.z = 0;
+        this.ground = plane;
         this.scene.add(plane);
+
+        // SOFT contact shadow: a blurred radial blob laid flat under the crown.
+        // This is the primary, gentle grounding - not a hard dark cast.
+        const shMat = new THREE.MeshBasicMaterial({
+            map: makeContactShadowTexture(SHADOW.contactStrength),
+            transparent: true,
+            depthWrite: false,
+            toneMapped: false,
+            blending: THREE.NormalBlending,
+        });
+        this.contactShadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), shMat);
+        this.contactShadow.position.z = 0.03;       // avoid z-fighting with grass
+        this.contactShadow.renderOrder = 1;
+        this.scene.add(this.contactShadow);
 
         // Subtle reference grid (toggleable), close in tone to the ground.
         const grid = new THREE.GridHelper(400, 40, 0x4a5b40, 0x4a5b40);
         grid.material.transparent = true;
-        grid.material.opacity = 0.15;
+        grid.material.opacity = 0.12;
         grid.rotation.x = Math.PI / 2;
         grid.position.z = 0.05;
         this.grid = grid;

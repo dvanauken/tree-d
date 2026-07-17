@@ -70,6 +70,7 @@
             </div>
 
             <div class="overlay overlay-right">
+                <button id="btn-arch"   type="button" class="toggle" aria-pressed="false">Arch</button>
                 <button id="btn-leaves" type="button" class="toggle" aria-pressed="false">Leaves</button>
                 <button id="btn-grid"   type="button" class="toggle active" aria-pressed="true">Grid</button>
                 <button id="btn-figure" type="button" class="toggle active" aria-pressed="true">Figure</button>
@@ -79,6 +80,9 @@
                 </div>
                 <button id="btn-fit" type="button">Fit</button>
             </div>
+
+            <!-- Architecture View report + legend (shown when Arch is on) -->
+            <div id="arch-panel" hidden role="status" aria-label="Architecture report"></div>
         </main>
 
         <!-- EAST: parameters -->
